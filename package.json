@@ -7,7 +7,10 @@
   ],
   "scripts": {
     "docker:build": "docker build -t mupibox .",
-    "docker:start": "docker run -it -v ./src/backend-api/:/home/dietpi/.mupibox/Sonos-Kids-Controller-master/server/ -p 80:80 -p 8200:8200 -p 127.0.0.1:5005:5005 mupibox:latest bash",
+    "docker:start": "docker network create mupibox-dev 2>/dev/null; docker run -it --network mupibox-dev -v ./src/backend-api/:/home/dietpi/.mupibox/Sonos-Kids-Controller-master/server/ -p 80:80 -p 8200:8200 -p 127.0.0.1:5005:5005 mupibox:latest bash",
+    "webdav:start": "docker network create mupibox-dev 2>/dev/null; docker compose -f docker/webdav/docker-compose.yml up -d --build --wait --wait-timeout 180",
+    "webdav:stop": "docker compose -f docker/webdav/docker-compose.yml down",
+    "webdav:reset": "docker compose -f docker/webdav/docker-compose.yml down -v",
     "serve": "concurrently 'npm run serve:admin' 'npm run serve:frontend-box' 'npm run serve:backend-api' 'npm run serve:backend-player'",
     "serve:admin": "cd AdminInterface/www && php -S 127.0.0.1:8000",
     "serve:frontend-box": "npm run serve --workspace=mupibox-frontend-box",

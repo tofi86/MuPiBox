@@ -1,0 +1,32 @@
+# A WebDAV "NAS" for developing the NAS and photo features on the desk: Apache httpd with mod_dav, Basic auth
+# (mupibox/mupibox) and a generated tree of sample pictures in /data. See README.md.
+# npm run webdav:start | webdav:stop | webdav:reset (drops the generated data as well).
+services:
+  webdav:
+    build: .
+    container_name: mupibox-webdav
+    ports:
+      - "8081:80"
+    volumes:
+      - webdav-data:/data
+    networks:
+      - mupibox-dev
+    healthcheck:
+      # Healthy once httpd answers an authenticated GET; the sample data is generated before httpd starts, so the
+      # start period covers the first run's ImageMagick work.
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://mupibox:mupibox@127.0.0.1/"]
+      interval: 5s
+      timeout: 3s
+      retries: 6
+      start_period: 120s
+
+volumes:
+  webdav-data:
+
+networks:
+  # A fixed name so the production-like container (npm run docker:start, --network mupibox-dev) reaches this one
+  # as "webdav" on port 80. External: both npm scripts create it when missing (docker network create), compose
+  # neither warns about a network it did not create nor removes it under the other container on down.
+  mupibox-dev:
+    name: mupibox-dev
+    external: true
