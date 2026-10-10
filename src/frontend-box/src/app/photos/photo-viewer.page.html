@@ -24,7 +24,7 @@
 </ion-header>
 
 <!-- (no scrolling of the content: the swiper takes the whole area, zoom pans inside a slide) -->
-<ion-content class="photos-content" [scrollY]="false">
+<ion-content class="photos-content" [scrollY]="false" (pointerdown)="touched()">
   <mupi-loading [loading]="isLoading()"></mupi-loading>
   @if (unavailable()) {
     <mupi-media-unavailable [nas]="true"></mupi-media-unavailable>
@@ -40,7 +40,7 @@
             <div class="swiper-zoom-container">
               @if (inWindow(i)) {
                 @if (failed().has(p.path)) {
-                  <div class="pv-broken"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v14H4zM4 15l5-5 4 4 3-3 4 4" /><path d="M3 3l18 18" /></svg></div>
+                  <div class="pv-broken" (click)="retry(p, true)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v14H4zM4 15l5-5 4 4 3-3 4 4" /><path d="M3 3l18 18" /></svg></div>
                 } @else {
                   <img [src]="p.src" [class.pv-ready]="loaded().has(p.path)" draggable="false" alt="" (load)="onLoad(p)" (error)="onError(p)" />
                   @if (!loaded().has(p.path)) {

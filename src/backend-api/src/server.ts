@@ -5391,7 +5391,8 @@ const webdavPhotoSource: PhotoSource = {
       // (a 12 MB picture over WiFi takes its time)
       return await nasFetchToTemp(filePath, session, 60000)
     } catch {
-      nasMarkOffline()
+      // one download that failed or took too long: the display asks for that picture again - the NAS is not marked
+      // offline for it (that stopped every other picture and the music for 30 s during a fast run through an album)
       throw new PhotoSourceOffline('unreachable')
     }
   },
@@ -7934,7 +7935,11 @@ function getThumbnail(
         const converted = /\.(heic|heif)$/i.test(source) && !(await pilReadsHeif()) ? await heifToJpeg(source) : undefined
         if (converted === null) throw new Error('heif-convert failed')
         try {
-          await execFileAsync('nice', ['-n', '10', 'python3', '-c', thumbScript, converted ?? source, temp, String(size)], { timeout: 30000 })
+          // (a screen-size picture of the Fotos tab from a 24 MP iPhone file: decoding and sizing take a Pi 4 several
+          // seconds, two at a time and next to Chromium - the covers keep their half minute)
+          await execFileAsync('nice', ['-n', '10', 'python3', '-c', thumbScript, converted ?? source, temp, String(size)], {
+            timeout: size >= 1000 ? 120000 : 30000,
+          })
         } finally {
           if (converted) await rm(converted, { force: true })
         }

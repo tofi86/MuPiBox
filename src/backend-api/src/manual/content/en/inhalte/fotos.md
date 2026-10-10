@@ -31,7 +31,7 @@ The box turns every picture into a copy at display size and keeps it on the memo
 
 ## The tab on the display
 
-As soon as the first folder is chosen, the display gets the tab **Photos** next to Audiobooks, Music and the other tabs ([The start page](../bedienung/startseite.md)). A tap on an album opens it, swiping leafs through, a double tap enlarges the picture, the arrow at the top leads back. While pictures are being looked at, the box does not switch itself off.
+As soon as the first folder is chosen, the display gets the tab **Photos** next to Audiobooks, Music and the other tabs ([The start page](../bedienung/startseite.md)). A tap on an album opens it, swiping leafs through, a double tap enlarges the picture, the arrow at the top leads back. While someone leafs through the pictures, the box does not switch itself off; five minutes after the last touch it counts as unused again.
 
 With **Hide Photos tab** on the Photos page or under **Settings › Display & controls › Controls on the display** the tab disappears; the folders stay chosen.
 

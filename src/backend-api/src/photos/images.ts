@@ -32,11 +32,13 @@ export function limitFetches(source: PhotoSource, limit = 2): PhotoSource {
   const waiting: (() => void)[] = []
   return {
     list: (folder) => source.list(folder),
-    async fetchToTemp(filePath) {
+    async fetchToTemp(filePath, cancelled) {
       if (running >= limit) await new Promise<void>((resolve) => waiting.push(resolve))
       running++
       try {
-        return await source.fetchToTemp(filePath)
+        // (asked for in a fast swipe and gone again: the download is not started for nobody)
+        if (cancelled?.()) return undefined
+        return await source.fetchToTemp(filePath, cancelled)
       } finally {
         running--
         waiting.shift()?.()
@@ -62,9 +64,10 @@ export async function photoImage(
   filePath: string,
   size: PhotoSize,
   version?: string,
+  cancelled?: () => boolean,
 ): Promise<string | undefined> {
   const started = Date.now()
-  const result = await photoImageNow(deps, filePath, size, version)
+  const result = await photoImageNow(deps, filePath, size, version, cancelled)
   const took = Date.now() - started
   if (took > SLOW_PHOTO_MS) {
     console.log(
@@ -79,10 +82,11 @@ async function photoImageNow(
   filePath: string,
   size: PhotoSize,
   version?: string,
+  cancelled?: () => boolean,
 ): Promise<string | undefined> {
   // (without a version from the NAS the picture is made again once a day, as the covers are)
   const seed = `photo|${filePath}|${version ?? Math.floor(Date.now() / 86400000)}`
-  const fetchSource = () => deps.source.fetchToTemp(filePath)
+  const fetchSource = () => deps.source.fetchToTemp(filePath, cancelled)
   const px = photoSizePx(size, deps.uiScale())
   if (!isHeif(filePath)) return deps.thumbnail(`photo:${filePath}`, px, seed, fetchSource)
   // HEIC: the decode is the expensive part (pillow-heif or heif-convert, see getThumbnail) - the screen picture is made first and

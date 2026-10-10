@@ -1,6 +1,6 @@
 import { provideHttpClient, withInterceptorsFromDi } from '@angular/common/http'
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing'
-import { ComponentFixture, TestBed } from '@angular/core/testing'
+import { ComponentFixture, fakeAsync, TestBed, tick } from '@angular/core/testing'
 import { ActivatedRoute, convertToParamMap } from '@angular/router'
 
 import { PhotoViewerPage } from './photo-viewer.page'
@@ -54,7 +54,7 @@ describe('PhotoViewerPage', () => {
     expect((component as any).unavailable()).toBeFalse()
   })
 
-  it('moves the counter and the picture window with the slide', () => {
+  it('moves the counter at once and the picture window once the swiper settled', fakeAsync(() => {
     httpClient.expectOne(albumUrl).flush(album(8))
     expect((component as any).inWindow(0)).toBeTrue()
     expect((component as any).inWindow(2)).toBeTrue()
@@ -62,10 +62,26 @@ describe('PhotoViewerPage', () => {
 
     ;(component as any).onSlideChange({ target: { swiper: { activeIndex: 5 } } } as unknown as Event)
     expect((component as any).counter()).toBe('6 / 8')
+    // (a fast run through the album: the window waits for the swiper to settle)
+    expect((component as any).inWindow(2)).toBeTrue()
+    tick(300)
     expect((component as any).inWindow(2)).toBeFalse()
     expect((component as any).inWindow(3)).toBeTrue()
     expect((component as any).inWindow(7)).toBeTrue()
-  })
+  }))
+
+  it('asks for a failed picture again after a pause, and at once on a tap', fakeAsync(() => {
+    httpClient.expectOne(albumUrl).flush(album(3))
+    const photo = (component as any).list()[0] as Photo
+    ;(component as any).onError(photo)
+    expect((component as any).failed().has(photo.path)).toBeTrue()
+    tick(4000)
+    expect((component as any).failed().has(photo.path)).toBeFalse()
+    ;(component as any).onError(photo)
+    ;(component as any).retry(photo, true)
+    expect((component as any).failed().has(photo.path)).toBeFalse()
+    tick(10_000)
+  }))
 
   it('ignores a slide event without a swiper', () => {
     httpClient.expectOne(albumUrl).flush(album(3))

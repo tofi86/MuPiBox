@@ -27,7 +27,8 @@ export interface PhotoSource {
   list(folder: string): Promise<PhotoEntry[]>
   /**
    * The picture as a temporary file that keeps the picture's extension (the caller deletes it); undefined when it
-   * cannot be read. Throws PhotoSourceOffline when the source is away.
+   * cannot be read. Throws PhotoSourceOffline when the source is away. `cancelled` says whether whoever asked is
+   * still there (the display gave up on a picture passed in a fast swipe): then nothing needs fetching.
    */
-  fetchToTemp(path: string): Promise<string | undefined>
+  fetchToTemp(path: string, cancelled?: () => boolean): Promise<string | undefined>
 }

@@ -72,6 +72,20 @@ describe('PhotosService', () => {
     http.expectNone(activity)
   }))
 
+  it('keepAlive stays quiet while the page says nobody touched it', fakeAsync(() => {
+    const activity = { method: 'POST', url: `${api}/activity` }
+    let active = true
+    const keepAlive = service.keepAlive(() => active)
+    http.expectOne(activity).flush(null, { status: 204, statusText: 'No Content' })
+    active = false
+    tick(60_000)
+    http.expectNone(activity)
+    active = true
+    tick(60_000)
+    http.expectOne(activity).flush(null, { status: 204, statusText: 'No Content' })
+    keepAlive.unsubscribe()
+  }))
+
   it('keepAlive goes on after a failed post', fakeAsync(() => {
     const activity = { method: 'POST', url: `${api}/activity` }
     const keepAlive = service.keepAlive()

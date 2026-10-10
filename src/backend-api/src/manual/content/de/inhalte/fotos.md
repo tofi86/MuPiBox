@@ -31,7 +31,7 @@ Die Box wandelt jedes Bild in eine Kopie in Display-Größe um und behält sie a
 
 ## Der Reiter auf dem Display
 
-Sobald der erste Ordner gewählt ist, bekommt das Display den Reiter **Fotos** neben Hörspiele, Musik und den anderen Reitern ([Die Startseite](../bedienung/startseite.md)). Ein Tipp auf ein Album öffnet es, wischen blättert, ein Doppeltipp vergrößert das Bild, der Pfeil oben führt zurück. Solange Bilder angeschaut werden, schaltet sich die Box nicht von selbst ab.
+Sobald der erste Ordner gewählt ist, bekommt das Display den Reiter **Fotos** neben Hörspiele, Musik und den anderen Reitern ([Die Startseite](../bedienung/startseite.md)). Ein Tipp auf ein Album öffnet es, wischen blättert, ein Doppeltipp vergrößert das Bild, der Pfeil oben führt zurück. Solange jemand durch die Bilder blättert, schaltet sich die Box nicht von selbst ab; fünf Minuten nach der letzten Berührung gilt sie wieder als unbenutzt.
 
 Mit **Fotos-Reiter ausblenden** auf der Seite Fotos oder unter **Einstellungen › Display & Bedienung › Bedienung am Display** verschwindet der Reiter; die Ordner bleiben gewählt.
 

@@ -213,6 +213,11 @@ export function registerPhotoRoutes(app: Express, deps: PhotoDeps): PhotoRoutes 
     }
     const filePath = normalizePath(raw)
     const given = str(req.query.v)
+    // (the display drops the request of a picture it swiped past: a download not started yet is skipped then)
+    let gone = false
+    res.on('close', () => {
+      if (!res.writableFinished) gone = true
+    })
     try {
       let version: string | undefined = given || undefined
       if (!version) {
@@ -220,7 +225,7 @@ export function registerPhotoRoutes(app: Express, deps: PhotoDeps): PhotoRoutes 
         const entries = await deps.source.list(path.posix.dirname(filePath))
         version = entries.find((e) => e.path === filePath)?.version
       }
-      const file = await photoImage(imageDeps, filePath, size, version)
+      const file = await photoImage(imageDeps, filePath, size, version, () => gone)
       if (!file) {
         // not readable: gone on the NAS, or the NAS went away meanwhile - the cache does not tell the two apart,
         // the listing (kept a minute) throws for the second

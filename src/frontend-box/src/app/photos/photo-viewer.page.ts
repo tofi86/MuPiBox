@@ -63,7 +63,17 @@ export class PhotoViewerPage {
   // 2000 pictures at screen size would otherwise be decoded into memory as a whole on the Pi.
   private static readonly WINDOW = 2
   // Pictures this far away are fetched into the browser's cache ahead of the window, so a quick swipe finds them.
-  private static readonly PRELOAD = 4
+  private static readonly PRELOAD = 3
+  // The window follows a swipe only once the swiper has settled: a fast run through the album must not ask the box
+  // for every picture passed on the way (each one a download from the NAS, from a cloud maybe).
+  private static readonly SETTLE_MS = 300
+  // The box is kept awake this long after the last touch in the viewer; a picture a child walked away from then
+  // leaves the idle shutdown to its work.
+  private static readonly KEEP_AWAKE_AFTER_TOUCH_MS = 5 * 60_000
+  // A picture the box could not deliver (a download that took too long, a NAS that was busy) is asked for again a
+  // few times, with a growing pause; a tap on the broken card asks at once.
+  private static readonly RETRY_AFTER_MS = 4000
+  private static readonly MAX_RETRIES = 5
   // While the album could not be loaded (NAS offline) it is asked for again every 30 s.
   private static readonly RETRY_MS = 30_000
 
@@ -79,6 +89,8 @@ export class PhotoViewerPage {
   protected readonly album = signal<PhotoAlbumDetail | undefined>(undefined)
   protected readonly list = signal<Photo[] | undefined>(undefined)
   protected readonly index = signal(0)
+  // the slide the picture window is built around: the index once the swiper has settled (SETTLE_MS)
+  protected readonly windowIndex = signal(0)
   protected readonly isLoading = signal(false)
   protected readonly unavailable = signal(false)
   // the pictures (by path) that are on the screen already, and those the box could not deliver (404, 503)
@@ -86,6 +98,10 @@ export class PhotoViewerPage {
   protected readonly failed = signal(new Set<string>())
   private readonly reloadTick = signal(0)
   private readonly preloaded = new Set<string>()
+  private readonly attempts = new Map<string, number>()
+  private readonly retryTimers = new Set<number>()
+  private settleTimer: number | undefined
+  private lastTouch = Date.now()
   private keepAlive: Subscription | undefined
 
   protected readonly title = computed(() => this.album()?.name ?? this.displayTexts.text('photosTitle'))
@@ -109,6 +125,7 @@ export class PhotoViewerPage {
           this.album.set(album)
           this.list.set(Array.isArray(album?.photos) ? album.photos : [])
           this.index.set(0)
+          this.windowIndex.set(0)
           this.unavailable.set(false)
           this.isLoading.set(false)
           this.preloadNear(0)
@@ -127,14 +144,27 @@ export class PhotoViewerPage {
       onCleanup(() => window.clearInterval(timer))
     })
 
-    inject(DestroyRef).onDestroy(() => this.stopKeepAlive())
+    inject(DestroyRef).onDestroy(() => {
+      this.stopKeepAlive()
+      window.clearTimeout(this.settleTimer)
+      for (const timer of this.retryTimers) window.clearTimeout(timer)
+    })
   }
 
-  // The box must not shut down for idleness while the pictures are looked at (the player is silent, touches do
-  // not count): the backend is told every minute as long as the page is on the screen.
+  // The box must not shut down for idleness while someone leafs through the pictures (the player is silent, touches
+  // do not count): the backend is told every minute, as long as the page is on the screen and was touched within
+  // the last KEEP_AWAKE_AFTER_TOUCH_MS.
   public ionViewDidEnter(): void {
     this.stopKeepAlive()
-    this.keepAlive = this.photos.keepAlive()
+    this.lastTouch = Date.now()
+    this.keepAlive = this.photos.keepAlive(
+      () => Date.now() - this.lastTouch < PhotoViewerPage.KEEP_AWAKE_AFTER_TOUCH_MS,
+    )
+  }
+
+  /** A finger on the page: a swipe, a tap, a pinch. */
+  protected touched(): void {
+    this.lastTouch = Date.now()
   }
 
   public ionViewWillLeave(): void {
@@ -148,14 +178,19 @@ export class PhotoViewerPage {
 
   /** Whether slide `i` carries its picture (see WINDOW). */
   protected inWindow(i: number): boolean {
-    return Math.abs(i - this.index()) <= PhotoViewerPage.WINDOW
+    return Math.abs(i - this.windowIndex()) <= PhotoViewerPage.WINDOW
   }
 
   protected onSlideChange(event: Event): void {
     const swiper = (event.target as unknown as { swiper?: { activeIndex?: number } })?.swiper
     if (!swiper || typeof swiper.activeIndex !== 'number') return
     this.index.set(swiper.activeIndex)
-    this.preloadNear(swiper.activeIndex)
+    this.touched()
+    window.clearTimeout(this.settleTimer)
+    this.settleTimer = window.setTimeout(() => {
+      this.windowIndex.set(this.index())
+      this.preloadNear(this.index())
+    }, PhotoViewerPage.SETTLE_MS)
   }
 
   // The pictures just outside the window are fetched ahead, once per address, as the cover lists do it
@@ -178,7 +213,25 @@ export class PhotoViewerPage {
   }
 
   protected onError(photo: Photo): void {
+    const tries = (this.attempts.get(photo.path) ?? 0) + 1
+    this.attempts.set(photo.path, tries)
     this.failed.update((paths) => new Set(paths).add(photo.path))
+    if (tries > PhotoViewerPage.MAX_RETRIES) return
+    const timer = window.setTimeout(() => {
+      this.retryTimers.delete(timer)
+      this.retry(photo)
+    }, PhotoViewerPage.RETRY_AFTER_MS * tries)
+    this.retryTimers.add(timer)
+  }
+
+  /** Asks the box for a failed picture again (fresh: as if for the first time - a tap on the broken card). */
+  protected retry(photo: Photo, fresh = false): void {
+    if (fresh) this.attempts.delete(photo.path)
+    this.failed.update((paths) => {
+      const next = new Set(paths)
+      next.delete(photo.path)
+      return next
+    })
   }
 
   protected goBack(): void {

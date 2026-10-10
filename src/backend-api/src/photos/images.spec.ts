@@ -34,6 +34,21 @@ describe('limitFetches', () => {
     assert.equal(most, 2)
   })
 
+  it('skips a download whose asker is gone', async () => {
+    const fetched: string[] = []
+    const source: PhotoSource = {
+      list: async (): Promise<PhotoEntry[]> => [],
+      fetchToTemp: async (p) => {
+        fetched.push(p)
+        return p
+      },
+    }
+    const limited = limitFetches(source, 1)
+    assert.equal(await limited.fetchToTemp('gone', () => true), undefined)
+    assert.equal(await limited.fetchToTemp('here', () => false), 'here')
+    assert.deepEqual(fetched, ['here'])
+  })
+
   it('frees the slot when a download fails', async () => {
     const source: PhotoSource = {
       list: async (): Promise<PhotoEntry[]> => [],

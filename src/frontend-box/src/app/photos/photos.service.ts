@@ -3,6 +3,7 @@ import { Injectable, inject, signal } from '@angular/core'
 import {
   catchError,
   EMPTY,
+  filter,
   interval,
   map,
   type Observable,
@@ -71,15 +72,17 @@ export class PhotosService {
   }
 
   /**
-   * Tells the box that someone is looking at photos, now and then every minute: the idle shutdown counts a box
-   * that does not play as idle, touches do not reset it. Sent from anywhere; the backend ignores it unless it
-   * comes from the box itself, and a failed post is nobody's problem (the next one comes in a minute).
+   * Tells the box that someone is looking at photos, now and then every minute while `stillActive` says so (the
+   * viewer: touched within the last minutes): the idle shutdown counts a box that does not play as idle, touches do
+   * not reset it. Sent from anywhere; the backend ignores it unless it comes from the box itself, and a failed post
+   * is nobody's problem (the next one comes in a minute).
    */
-  public keepAlive(): Subscription {
+  public keepAlive(stillActive: () => boolean = () => true): Subscription {
     // (startWith, not timer(0, …): the first post goes out at once, before the viewer's page has even settled)
     return interval(60_000)
       .pipe(
         startWith(0),
+        filter(() => stillActive()),
         switchMap(() => this.http.post(`${this.apiUrl}/activity`, null).pipe(catchError(() => EMPTY))),
       )
       .subscribe()
