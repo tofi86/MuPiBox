@@ -14,6 +14,7 @@ Jeder Inhalt kommt in eine von drei **Kategorien**: Hörbuch/Hörspiel, Musik od
 Danach:
 
 - [Cover](cover.md): eigene Bilder, Online-Cover und was bei fehlenden Covern passiert.
+- [Fotos](fotos.md): Fotoordner vom NAS, die das Display als Alben zum Anschauen zeigt.
 - [Inhalte verwalten](verwalten.md): Künstler-Abos, einzelne Alben ausschließen, entfernen.
 
 > [!TIP]

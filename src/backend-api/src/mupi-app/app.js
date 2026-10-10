@@ -2232,16 +2232,17 @@ const SYNC_API = '/api/spotify-sync'
 // items: /api/data; local: category -> artist folders; cat / src / q: the filters
 // items: /api/data; local: category -> folders of the SD card; nas: the NAS folders shown on the box;
 // cat / src / q: the filters; subs, nasProfile, covers: the numbers of the tiles
-const lib = { items: null, local: {}, nas: [], cat: 'all', src: 'all', q: '', sync: null, subs: null, nasProfile: '', covers: null, mounts: 0 }
+const lib = { items: null, local: {}, nas: [], cat: 'all', src: 'all', q: '', sync: null, subs: null, nasProfile: '', covers: null, mounts: 0, photos: null }
 
 async function loadLib() {
-  const [data, sync, nas, subs, profiles, covers, ...local] = await Promise.all([
+  const [data, sync, nas, subs, profiles, covers, photos, ...local] = await Promise.all([
     api('/api/data'),
     api(`${SYNC_API}/status`),
     api('/api/nas/artists'),
     api(`${API}/library/subscriptions`),
     api('/api/nas/profiles'),
     api('/api/online-covers'),
+    api(`${API}/photos/config`),
     ...CATS.map(([c]) => api(`/api/library/artists?category=${c}`)),
   ])
   lib.items = Array.isArray(data.body) ? data.body : []
@@ -2251,6 +2252,8 @@ async function loadLib() {
   const active = (profiles.body?.profiles ?? []).find((p) => p.active)
   lib.nasProfile = active ? (active.name === 'standard' ? 'Standard' : active.name) : ''
   lib.covers = covers.ok ? (covers.body?.entries ?? []).filter((e) => e.status === 'found').length : null
+  // (the photo folders, counted for the tile; null: the box did not say)
+  lib.photos = photos.ok && Array.isArray(photos.body?.folders) ? photos.body.folders.length : null
   CATS.forEach(([c], i) => (lib.local[c] = Array.isArray(local[i].body) ? local[i].body : []))
 }
 
@@ -2307,7 +2310,7 @@ function libSourceHas(id) {
   return lib.items.some((it) => it && !it.isResume && it.category !== 'resume' && entryInSource(it, id))
 }
 
-// The four tiles: where the content comes from, each with its state in a few words
+// The five tiles: where the content comes from, each with its state in a few words
 function drawLibTiles() {
   const box = $('#lib-tiles')
   if (!box) return
@@ -2320,6 +2323,7 @@ function drawLibTiles() {
     ['verwaltet', 'lib', 'Verwaltete Inhalte', lib.subs ? `${a} ${a === 1 ? 'Abo' : 'Abos'} · ${al} ${al === 1 ? 'Album' : 'Alben'}` : ''],
     ['nas', 'server', 'NAS', lib.nasProfile ? `Profil ${lib.nasProfile}` : `${lib.nas.length} Ordner`],
     ['cover', 'image', 'Cover', lib.covers != null ? `${lib.covers} gefunden` : 'Eigene Bilder'],
+    ['fotos', 'camera', 'Fotos', lib.photos == null ? '' : lib.photos === 0 ? 'Keine Ordner' : `${lib.photos} Ordner`],
   ]
   box.innerHTML = tiles
     .map(([id, ic, t, sub]) => `<button class="lib-tile" data-go="${id}"><span class="tile">${icon(ic, 18)}</span><span class="lbl"><b>${esc(t)}</b><small>${esc(sub)}</small></span></button>`)
@@ -5315,6 +5319,104 @@ async function nasWhereSheet(row, place = null) {
   )
 }
 
+// A folder of the NAS to choose, one level at a time, in a sheet: the crumbs of the way there, the subfolders of the
+// folder shown (NAS_PAGE a page), a line about it from peek(path) ("2 Unterordner werden Alben …") and the button that
+// takes it (the photo folders). Its own small browser, not the NAS page's tree: nasTreeRows / drawNasFolders are
+// welded to that page's chips, search and edits.
+function pickNasFolder({ title, onPick, peek = null, start = '/', pickLabel = 'Diesen Ordner wählen' }) {
+  let path = start
+  let page = 0
+  let peekSeq = 0
+  const cache = new Map() // path -> its subfolders | 'loading' | { error: 'login' | 'offline' }
+  openSheet(
+    `<h2>${esc(title)}</h2>
+     <nav class="crumbs" id="pk-crumbs" aria-label="Pfad"></nav>
+     <div id="pk-list"><div class="loading"><p>Lade …</p></div></div>
+     <p class="help" id="pk-peek" style="margin:0" hidden></p>
+     <div class="btns"><button class="btn" data-close>Abbrechen</button><button class="btn primary" id="pk-ok" disabled>${esc(pickLabel)}</button></div>`,
+    (sheet, close) => {
+      const load = async (p) => {
+        if (cache.has(p)) return
+        cache.set(p, 'loading')
+        const r = await api(`/api/nas/browse?path=${encodeURIComponent(p)}`)
+        if (r.ok && r.body?.success) cache.set(p, (r.body.entries ?? []).filter((e) => e.isDirectory !== false))
+        else cache.set(p, { error: r.status === 401 ? 'login' : 'offline' })
+        if (sheet.isConnected && path === p) draw()
+      }
+      const showPeek = async (p) => {
+        if (!peek) return
+        const el = $('#pk-peek', sheet)
+        const seq = ++peekSeq
+        el.hidden = false
+        el.textContent = tr('Prüfe …')
+        const text = await peek(p).catch(() => '')
+        // (the answer for a folder left meanwhile)
+        if (seq !== peekSeq || !sheet.isConnected) return
+        el.hidden = !text
+        el.textContent = tr(text)
+      }
+      const draw = () => {
+        const segs = path.split('/').filter(Boolean)
+        const crumbs = [{ title: 'NAS', to: '/' }, ...segs.map((s, i) => ({ title: s, to: `/${segs.slice(0, i + 1).join('/')}`, own: true }))]
+        $('#pk-crumbs', sheet).innerHTML = crumbs
+          .map((c, i) => {
+            // (a folder's name is no text to translate)
+            const name = c.own ? ' translate="no"' : ''
+            return i === crumbs.length - 1 ? `<span aria-current="page"${name}>${esc(c.title)}</span>` : `<button data-to="${esc(c.to)}"${name}>${esc(c.title)}</button><span class="sep">›</span>`
+          })
+          .join('')
+        const list = $('#pk-list', sheet)
+        const st = cache.get(path)
+        $('#pk-ok', sheet).disabled = !Array.isArray(st)
+        if (!st || st === 'loading') list.innerHTML = `<div class="loading"><p>Lade …</p></div>`
+        else if (st.error === 'login')
+          list.innerHTML = `<div class="note warn">${icon('info', 18)}<span>Die Box ist nicht beim NAS angemeldet.</span></div><div class="btns"><button class="btn" data-nas>Zur NAS-Seite</button></div>`
+        else if (st.error)
+          list.innerHTML = `<div class="note warn">${icon('info', 18)}<span>Das NAS antwortet gerade nicht.</span></div><div class="btns"><button class="btn" data-retry>Erneut versuchen</button></div>`
+        else if (st.length === 0) list.innerHTML = `<p class="help" style="margin:0">Keine Unterordner</p>`
+        else {
+          const pages = Math.ceil(st.length / NAS_PAGE)
+          page = Math.min(page, pages - 1)
+          const from = page * NAS_PAGE
+          list.innerHTML = `<div class="navlist">${st
+            .slice(from, from + NAS_PAGE)
+            .map((e, i) => `<button class="navrow" data-in="${from + i}"><span class="tile">${icon('folder', 18)}</span><span class="lbl"><b translate="no">${esc(e.name)}</b></span><span class="chev">${icon('chevron', 18)}</span></button>`)
+            .join('')}</div>${pages > 1 ? `<nav class="pager" aria-label="Seiten">${pagerButtons(page, pages)}</nav>` : ''}`
+        }
+        for (const b of sheet.querySelectorAll('#pk-crumbs [data-to]')) b.onclick = () => open(b.dataset.to)
+        for (const b of list.querySelectorAll('[data-in]')) b.onclick = () => open(st[Number(b.dataset.in)].path)
+        for (const b of list.querySelectorAll('[data-page]')) {
+          b.onclick = () => {
+            page = Number(b.dataset.page)
+            draw()
+          }
+        }
+        list.querySelector('[data-retry]')?.addEventListener('click', () => {
+          cache.delete(path)
+          open(path)
+        })
+        list.querySelector('[data-nas]')?.addEventListener('click', () => {
+          close()
+          go('nas')
+        })
+      }
+      const open = (p) => {
+        path = p
+        page = 0
+        load(p)
+        draw()
+        showPeek(p)
+      }
+      sheet.querySelector('[data-close]').onclick = close
+      $('#pk-ok', sheet).onclick = () => {
+        close()
+        onPick(path)
+      }
+      open(start)
+    },
+  )
+}
+
 // One folder of the NAS page saved at once (its place on the box was chosen: shown where, or not): its show / hide /
 // download and category, the other changes of the page wait for "Auswahl speichern"
 async function saveNasRow(row) {
@@ -5577,6 +5679,120 @@ function pollNasIndex() {
 }
 
 /* Einstellungen › Aussehen and › Display & Bedienung */
+
+/* Fotos: the NAS folders whose pictures the display shows as albums (the Fotos tab) */
+
+// cfg: /api/app/photos/config - the folders chosen, how many there may be, the NAS the box is signed in to
+const photos = { cfg: null }
+// the last part of a path: the name a folder has on the NAS ("/photos/Familie 2026" → "Familie 2026")
+const baseName = (p) => String(p ?? '').replace(/\/+$/, '').split('/').pop() || String(p ?? '')
+
+async function loadPhotos() {
+  const [r] = await Promise.all([api(`${API}/photos/config`), loadDisplayOptions()])
+  if (!r.ok) throw new Error(`photos ${r.status}`)
+  photos.cfg = r.body
+  state.values.set('hideP', (disp.opts?.hiddenCategories ?? []).includes('photos'))
+}
+
+function photosTop() {
+  const c = photos.cfg ?? {}
+  const folders = Array.isArray(c.folders) ? c.folders : []
+  const max = c.maxFolders ?? 20
+  const full = folders.length >= max
+  const nas = c.nasConnected
+    ? `<p class="help">Angemeldet beim NAS <span translate="no">${esc(c.nasAddress ?? '')}</span>.</p>`
+    : `<div class="note warn">${icon('info', 18)}<span>Die Box ist nicht beim NAS angemeldet. Die Fotos liegen auf dem NAS – melde die Box unter Bibliothek › NAS an.</span></div>
+      <div class="btns"><button class="btn" data-go="nas">Zur NAS-Seite</button></div>`
+  const rows = folders.length
+    ? `<div class="rows">${folders
+        .map(
+          (f, i) =>
+            `<div class="entry"><span class="avatar">${icon('folder', 16)}</span><span class="lbl"><b translate="no">${esc(f.name || baseName(f.path))}</b><small translate="no">${esc(f.path)}</small></span><button class="btn danger sm" data-ph-rm="${i}">Entfernen</button></div>`,
+        )
+        .join('')}</div>`
+    : `<p class="help" style="margin:0">Noch kein Ordner gewählt – auf dem Display gibt es noch keinen Fotos-Reiter.</p>`
+  return [
+    `<section class="card"><h2>Fotos auf der Box</h2>
+      <p class="help">Die Kinder bekommen auf dem Display einen Reiter „Fotos“: ein Album je Unterordner der gewählten Ordner, zum Blättern wie in einem Fotoalbum. Die Bilder bleiben auf dem NAS, die Box holt sie sich in Display-Größe. JPEG, PNG, WebP und HEIC vom iPhone.</p>
+      ${nas}</section>`,
+    `<section class="card"><h2>Fotoordner</h2>
+      <p class="help">Jeder Unterordner eines gewählten Ordners wird ein Album, Bilder direkt darin ein Album mit dem Namen des Ordners.</p>
+      ${rows}
+      ${full ? `<p class="help">Mehr als ${max} Ordner gehen nicht.</p>` : ''}
+      <div class="btns"><button class="btn primary" id="ph-add" ${c.nasConnected && !full ? '' : 'disabled'}>${icon('plus', 18)}Ordner hinzufügen</button></div></section>`,
+  ]
+}
+
+function mountPhotos(root, page) {
+  const redraw = () => currentPage()?.id === page.id && renderPage(page, false)
+  // a change of the folders: the box answers with the list as it is now, or why not
+  const save = async (body, done) => {
+    const r = await api(`${API}/photos/folders`, { method: 'POST', body })
+    if (!r.ok) {
+      const why = {
+        invalid_path: 'Diesen Ordner kann die Box nicht lesen',
+        too_many: `Es sind schon ${photos.cfg?.maxFolders ?? 20} Ordner gewählt`,
+        nested: 'Dieser Ordner liegt in einem gewählten Ordner oder enthält einen',
+        exists: 'Diesen Ordner gibt es schon',
+      }[r.body?.error]
+      toast(why ?? 'Nicht gespeichert', 'info')
+      return false
+    }
+    photos.cfg = { ...photos.cfg, folders: Array.isArray(r.body?.folders) ? r.body.folders : [] }
+    // (the library's tile counts the folders too)
+    lib.photos = photos.cfg.folders.length
+    toast(done)
+    redraw()
+    return true
+  }
+  $('#ph-add', root)?.addEventListener('click', () => {
+    pickNasFolder({
+      title: 'Fotoordner wählen',
+      peek: photoPeek,
+      onPick: (path) => save({ add: { path } }, 'Ordner hinzugefügt – gleich auf dem Display'),
+    })
+  })
+  for (const b of root.querySelectorAll('[data-ph-rm]')) {
+    b.onclick = () => {
+      const f = photos.cfg?.folders?.[Number(b.dataset.phRm)]
+      if (!f) return
+      confirmSheet('Entfernen', `„${f.name || baseName(f.path)}“ aus den Fotos entfernen? Auf dem NAS bleibt alles, wie es ist.`, () => save({ remove: f.path }, 'Entfernt'))
+    }
+  }
+}
+
+// The switch "Fotos-Reiter ausblenden" (the schema's card): the display's hidden categories, as Bedienung am Display
+// sets them. false when the box did not take it: the switch goes back (see commitChange).
+async function changePhotos(key, v) {
+  if (key !== 'hideP') return
+  const hidden = (disp.opts?.hiddenCategories ?? []).filter((c) => c !== 'photos')
+  if (v) hidden.push('photos')
+  const ok = (await saveDisplayOptions({ hiddenCategories: hidden }, v ? 'Fotos-Reiter ausgeblendet' : 'Fotos-Reiter wird gezeigt')) !== false
+  if (ok) disp.opts = { ...disp.opts, hiddenCategories: hidden }
+  return ok
+}
+
+// What a folder would become on the display, in a line (GET photos/peek): the folder picker shows it under the list
+async function photoPeek(path) {
+  const r = await api(`${API}/photos/peek?path=${encodeURIComponent(path)}`)
+  if (r.status === 401) return 'Die Box ist nicht beim NAS angemeldet.'
+  if (r.status === 502) return 'Das NAS antwortet gerade nicht.'
+  if (!r.ok) return ''
+  const b = r.body ?? {}
+  const trim = (p) => String(p ?? '').replace(/\/+$/, '')
+  // the subfolders that become albums (an empty one becomes none); without the list, the box's count
+  const subs = Array.isArray(b.albums) ? b.albums.filter((a) => trim(a.path) !== trim(b.path) && trim(a.path) !== trim(path)).length : Number(b.subfolders ?? 0)
+  const imgs = Number(b.images ?? 0)
+  const skipped = Number(b.skipped ?? 0)
+  if (!subs && !imgs && !skipped) return 'Keine Unterordner und keine Bilder – hier gäbe es kein Album.'
+  return [
+    subs === 1 ? '1 Unterordner wird ein Album' : subs ? `${subs} Unterordner werden Alben` : '',
+    imgs === 1 ? '1 Bild direkt im Ordner' : imgs ? `${imgs} Bilder direkt im Ordner` : '',
+    skipped ? `${skipped} weitere Unterordner nicht geprüft` : '',
+  ]
+    .filter(Boolean)
+    .join(' · ')
+}
 
 const disp = { theme: null, opts: null, power: null, bs: null, bsSel: '', dt: null, dtLangs: {}, dtScreen: 'blocked' }
 
@@ -6354,13 +6570,16 @@ async function loadDisplaySettings() {
 }
 
 async function loadControls() {
-  await loadDisplayOptions()
+  const [, photos] = await Promise.all([loadDisplayOptions(), api(`${API}/photos/config`)])
+  // (the Fotos tab is on the display only while a photo folder is chosen: its row comes and goes with them)
+  disp.photoFolders = photos.ok && Array.isArray(photos.body?.folders) ? photos.body.folders.length : 0
   const o = disp.opts
   const hidden = new Set(o.hiddenCategories)
   state.values.set('hideA', hidden.has('audiobook'))
   state.values.set('hideM', hidden.has('music'))
   state.values.set('hideN', hidden.has('nas'))
   state.values.set('hideO', hidden.has('other'))
+  state.values.set('hideP', hidden.has('photos'))
   state.values.set('resume', o.resume)
   state.values.set('listTimer', o.listviewTimer)
   state.values.set('setTimer', o.settingsAccessTimer)
@@ -6378,6 +6597,7 @@ const TAB_KEYS = [
   ['hideM', 'showM', 'Musik'],
   ['hideN', 'showN', 'NAS'],
   ['hideO', 'showO', 'Radio & Podcasts'],
+  ['hideP', 'showP', 'Fotos'],
 ]
 
 // How long a podcast episode's position is remembered (mupibox.episodeResumeDays; 0: without end)
@@ -9819,8 +10039,10 @@ const CONTROLLERS = {
     // the tabs of the display (switched on = shown), how long to hold, where it goes on, podcasts
     sections: (page) => {
       const it = (key, over) => schemaItem(page, key, over)
-      const shown = TAB_KEYS.filter(([k]) => !state.values.get(k))
-      for (const [k, show] of TAB_KEYS) state.values.set(show, !state.values.get(k))
+      // (no Fotos row without a photo folder: there is no tab to switch then)
+      const tabs = TAB_KEYS.filter(([k]) => k !== 'hideP' || disp.photoFolders !== 0)
+      const shown = tabs.filter(([k]) => !state.values.get(k))
+      for (const [k, show] of tabs) state.values.set(show, !state.values.get(k))
       const setTimer = Number(state.values.get('setTimer'))
       return [
         {
@@ -9828,7 +10050,7 @@ const CONTROLLERS = {
           help: 'Die sichtbaren Reiter teilen sich die Breite. Mindestens einer bleibt.',
           items: [
             { type: 'html', html: `<div class="tab-prev" aria-hidden="true">${shown.map(([, , l]) => `<span>${esc(l)}</span>`).join('')}</div>` },
-            ...TAB_KEYS.map(([k, show, label]) => ({ type: 'toggle', key: show, label, disabled: shown.length === 1 && !state.values.get(k) })),
+            ...tabs.map(([k, show, label]) => ({ type: 'toggle', key: show, label, disabled: shown.length === 1 && !state.values.get(k) })),
           ],
         },
         {
@@ -9866,7 +10088,7 @@ const CONTROLLERS = {
       ]
     },
     async change(key, v, page) {
-      const cats = { hideA: 'audiobook', hideM: 'music', hideN: 'nas', hideO: 'other' }
+      const cats = { hideA: 'audiobook', hideM: 'music', hideN: 'nas', hideO: 'other', hideP: 'photos' }
       // (a tab switched on: not hidden)
       const tab = TAB_KEYS.find(([, show]) => show === key)
       if (tab) {
@@ -9883,7 +10105,7 @@ const CONTROLLERS = {
       }
       if (key in cats) {
         const hidden = Object.entries(cats).filter(([k]) => state.values.get(k)).map(([, c]) => c)
-        if (hidden.length === 4) {
+        if (hidden.length === Object.keys(cats).length) {
           state.values.set(key, false)
           toast('Mindestens eine Kategorie bleibt sichtbar', 'info')
           return renderPage(page, false)
@@ -10600,6 +10822,8 @@ const CONTROLLERS = {
     sections: () => [],
     mount: mountCovers,
   },
+  // (the schema's card "Auf dem Display" with the switch stays: no sections override)
+  fotos: { load: loadPhotos, top: photosTop, mount: mountPhotos, change: changePhotos },
   upload: {
     top: uploadTop,
     sections: () => [],

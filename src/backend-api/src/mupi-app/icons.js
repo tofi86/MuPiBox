@@ -57,6 +57,7 @@ export const ICONS = {
   close: "M6 6l12 12M18 6L6 18",
   check: "M5 12l5 5 9-10",
   book: "M4 19V5a2 2 0 0 1 2-2h14v14H6a2 2 0 0 0-2 2zM4 19a2 2 0 0 0 2 2h14v-4",
+  camera: "M3 8h4l2-3h6l2 3h4v12H3zM12 10.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7z",
 }
 
 export function icon(name, size = 20) {

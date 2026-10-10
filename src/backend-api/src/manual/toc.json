@@ -116,6 +116,13 @@
         }
       },
       {
+        "id": "fotos",
+        "title": {
+          "de": "Fotos",
+          "en": "Photos"
+        }
+      },
+      {
         "id": "cover",
         "title": {
           "de": "Cover",

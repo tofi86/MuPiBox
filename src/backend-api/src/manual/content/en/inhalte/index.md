@@ -14,6 +14,7 @@ Every item goes into one of three **categories**: Audiobook, Music or Radio & po
 After that:
 
 - [Covers](cover.md): your own pictures, online covers and what happens when covers are missing.
+- [Photos](fotos.md): photo folders from the NAS that the display shows as albums to look at.
 - [Managing content](verwalten.md): artist subscriptions, excluding single albums, removing.
 
 > [!TIP]

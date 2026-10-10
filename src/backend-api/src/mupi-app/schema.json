@@ -1622,6 +1622,29 @@
    ]
   },
   {
+   "id": "fotos",
+   "slug": "photos",
+   "area": "bibliothek",
+   "parent": "bibliothek",
+   "title": "Fotos",
+   "description": "",
+   "icon": "camera",
+   "sections": [
+    {
+     "title": "Auf dem Display",
+     "help": "Der Fotos-Reiter erscheint von selbst, sobald ein Fotoordner gewählt ist.",
+     "items": [
+      {
+       "type": "toggle",
+       "label": "Fotos-Reiter ausblenden",
+       "key": "hideP",
+       "default": false
+      }
+     ]
+    }
+   ]
+  },
+  {
    "id": "cover",
    "slug": "covers",
    "area": "bibliothek",
@@ -2209,6 +2232,12 @@
        "type": "toggle",
        "label": "Radio & Podcasts ausblenden",
        "key": "hideO",
+       "default": false
+      },
+      {
+       "type": "toggle",
+       "label": "Fotos ausblenden",
+       "key": "hideP",
        "default": false
       }
      ]
@@ -5389,6 +5418,26 @@
    "id": "nas"
   },
   {
+   "l": "Fotos",
+   "where": "Bibliothek › Fotos",
+   "id": "fotos"
+  },
+  {
+   "l": "Fotoordner",
+   "where": "Bibliothek › Fotos",
+   "id": "fotos"
+  },
+  {
+   "l": "Ordner hinzufügen",
+   "where": "Bibliothek › Fotos",
+   "id": "fotos"
+  },
+  {
+   "l": "Fotos-Reiter ausblenden",
+   "where": "Bibliothek › Fotos",
+   "id": "fotos"
+  },
+  {
    "l": "Cover",
    "where": "Bibliothek › Cover",
    "id": "cover"
@@ -5595,6 +5644,11 @@
   },
   {
    "l": "Radio & Podcasts ausblenden",
+   "where": "Display & Bedienung › Bedienung am Display",
+   "id": "bedienung"
+  },
+  {
+   "l": "Fotos ausblenden",
    "where": "Display & Bedienung › Bedienung am Display",
    "id": "bedienung"
   },
