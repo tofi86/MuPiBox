@@ -62,9 +62,13 @@ All contributions, e.g. reporting issues, are welcome.
   - **the MuPiBox app** at `/app` (`src/backend-api/src/mupi-app`): plain JavaScript, no build step.
     It replaces the admin interface page by page and is where most new features go.
   - the manual at `/manual` (`src/backend-api/src/manual`).
+  - the photo viewer's backend (`src/backend-api/src/photos`): the albums of the NAS folders the parents chose and
+    the pictures sized for the display; `source.ts` is the seam where another source (an SMB share) would plug in.
 - `src/backend-player` – the player (mplayer/mpv and Spotify, port 5005).
 - `AdminInterface/www` – the old PHP admin interface, kept for the pages the app does not have yet.
 - `scripts`, `config`, `autosetup`, `update` – what runs on the box itself (DietPi).
+- `docker/webdav` – a WebDAV "NAS" with sample pictures for developing the NAS and photo features on the desk
+  (`npm run webdav:start`, see its README).
 
 ### Local development
 Develop in a GitHub codespace (`.devcontainer`) or locally with Node.js 22 (PHP 8 only for the admin interface).
@@ -84,6 +88,9 @@ Develop in a GitHub codespace (`.devcontainer`) or locally with Node.js 22 (PHP 
    Your own box's library and settings: take the two files out of a backup of the box (Settings › Backup) into
    that folder, `unzip -o -j <backup>.zip etc/mupibox/mupiboxconfig.json home/dietpi/.mupibox/Sonos-Kids-Controller-master/server/config/data.json -d src/backend-api/config/`
    (the app's own restore page works on a box only). The Spotify client id and secret go into `config.json` by hand.
+   The NAS and photo pages need a WebDAV server: `npm run webdav:start` (Docker) gives one with sample pictures at
+   `localhost:8081`, account `mupibox`, password `mupibox` - sign in on the app's NAS page with that address (only
+   `npm run serve:backend-api` accepts an address of the developer's own machine as a NAS).
 4. `npm run lint` (Biome) before you commit. Tests: `npm run test:frontend-box` and
    `npm run test --workspace=mupibox-backend-api`.
 5. Create a branch, commit, push and open a pull request.
@@ -146,7 +153,8 @@ installs `bin/nodejs/deploy.zip` and `AdminInterface/release/www.zip` the way au
 lighttpd with PHP and the proxy to the app). `npm run docker:build`, then `npm run docker:start`; the app is at
 http://localhost/app/, the old admin interface at http://localhost/index.php, the display UI at http://localhost:8200/
 (with the player beside it on port 5005, as the kiosk on a box has it; from another device in the network the
-display goes through the API instead, as a phone does). There is no sound device and no hardware in the container:
+display goes through the API instead, as a phone does). The container joins the Docker network of the dev WebDAV
+container (`npm run webdav:start`), where that NAS is reachable as `webdav` on port 80. There is no sound device and no hardware in the container:
 Spotify plays (the display plays it in the browser, see below), while radio, local files, NAS and podcasts run through
 mpv inside the container and stay silent; the WiFi, GPIO and display pages do not work. A backup of your own box
 (Settings › Backup) can be

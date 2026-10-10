@@ -21,6 +21,9 @@ Code comments and commit messages mix German and English. The new app's UI strin
     - `src/eltern/` the app's API (`/api/app/*`, formerly `/api/eltern/*`). "Eltern" = parents.
     - `src/manual/` the manual at `/manual`, built by `manual/build.mjs` from markdown + `schema.json`.
     - `src/spotify-sync/` scheduled Spotify playlist sync (state machine, scheduler).
+    - `src/photos/` the Fotos tab's backend: `albums.ts` (pure: roots → albums, path gate), `images.ts` (sizes,
+      warming), `routes.ts` (display routes `/api/photos/*`, app routes `/api/app/photos/*`), `source.ts` (the
+      `PhotoSource` seam: today the WebDAV adapter in server.ts, an SMB adapter would implement the same two calls).
   - `src/backend-player` Express 4 CommonJS player (`spotify-control.js`): mplayer/mpv in slave mode for
     local/NAS/radio/podcasts, Spotify via librespot (Spotify Connect) + Web API. Port 5005, loopback only on the
     box. pm2 process `spotify-control`.
@@ -33,6 +36,8 @@ Code comments and commit messages mix German and English. The new app's UI strin
 - `news.txt` changelog (HTML snippets per version). Shown in admin and app, fetched from **upstream GitHub main**,
   and parsed by the manual build for the version number. `version.json` holds the release channels.
 - `DEPENDENCIES.md` audited inventory of npm/apt/binary deps and what is dead. Read it before adding a dependency.
+- `docker/webdav/` a WebDAV "NAS" for development (Apache mod_dav, Basic auth mupibox/mupibox, generated sample
+  pictures incl. an EXIF-rotated JPEG and a HEIC): `npm run webdav:start|stop|reset`, address `localhost:8081`.
 - `docs/COVERFLOW_PROMPT.md` rebuild prompt for the Cover Flow theme. `docs/app-mapping.md`, `docs/eine-app/` and
   `scripts/dev/app-i18n/` are referenced in comments but do not exist.
 
@@ -60,8 +65,11 @@ cd src/frontend-box && npx ng test --include src/app/media.service.spec.ts
 ```
 
 Test and lint state on `main` (as of 2026-10-10): `npm run lint` is **not** clean (app.js, auth.ts and others report
-Biome errors), so do not mass-fix unrelated files. One of the three backend tests in `server.spec.ts` fails locally
-(stale rssfeed content-type assertion). `test:frontend-api` points at a workspace that does not exist.
+Biome errors), so do not mass-fix unrelated files. The backend test script runs `src/**/*.spec.ts`; one of the three
+old tests in `server.spec.ts` fails locally (stale rssfeed content-type assertion) and, as an uncaught assertion,
+ends that file - the photos specs live in `src/photos/*.spec.ts`, each file in a process of its own.
+`test:frontend-api` points at a workspace that does not exist. `npm run test:frontend-box` has 14 failing specs on
+`main` (LoadingComponent, MedialistPage, SwiperComponent - their specs stub too little), so compare counts.
 `src/backend-player/test/engine.test.js` runs on the box only (needs the engines, see its header).
 
 Release packaging and other tools:
@@ -72,6 +80,7 @@ AdminInterface/zip.sh            # -> AdminInterface/release/www.zip
 node src/backend-api/src/manual/build.mjs [outDir]
 node tools/theme-preview/render.mjs [--only blue,kuschelmond]   # needs a frontend-box build and Chrome
 npm run docker:build && npm run docker:start                    # production-like container from the two release zips (no audio, no hardware)
+npm run webdav:start                                            # dev WebDAV "NAS" with sample pictures (docker/webdav/), reachable as webdav from docker:start
 ```
 
 ## Local development of the app (`/app`)
@@ -165,8 +174,14 @@ Verified on macOS with Node 22:
 
 - `server.ts` is one ~8.5k-line file with the display API (`/api/data`, `/api/add|edit|delete`, `/api/rssfeed`,
   `/api/home-lists`, Spotify lookups, NAS/WebDAV, covers, playtime, network). Newer features live in modules:
-  `eltern/`, `spotify-sync/`, `services/` (Spotify SDK wrapper, cover cache), `podcast-*.ts`, `audio-output.ts`,
-  `speech.ts`, `online-covers.ts`.
+  `eltern/`, `photos/`, `spotify-sync/`, `services/` (Spotify SDK wrapper, cover cache), `podcast-*.ts`,
+  `audio-output.ts`, `speech.ts`, `online-covers.ts`.
+- `/api/photos/*` (albums, one album, a picture in `thumb`/`screen` size) are login-free like `/api/nas/stream`
+  but only inside the folders of `photos.folders` (`photoPathAllowed`); `POST /api/activity` (`localOnly`) touches
+  `/tmp/mupibox_activity`, which `scripts/mupibox/idle_shutdown.sh` counts as "not idle" for two minutes (the viewer
+  posts once a minute). Thumbnails (`getThumbnail`) apply EXIF orientation and convert HEIC with `heif-convert`
+  (apt `libheif-examples`); `POST /api/nas/login` accepts the developer machine's own addresses under
+  `NODE_ENV=development` only.
 - Config paths: `configBasePath` is `./server/config` in production (that is
   `/home/dietpi/.mupibox/Sonos-Kids-Controller-master/server/config/`) and `./config` in dev and test. It holds
   `config.json` (from `www.json`: Spotify client credentials, player host/port), `data.json` (the media library, an
@@ -184,10 +199,12 @@ Verified on macOS with Node 22:
 ### frontend-box (the display)
 
 - Lazy standalone routes in `app.routes.ts` (home, medialist, player, resume, edit, settings, wifi, bluetooth, add,
-  text-preview). Ionic in `md` mode. Services use `environment.backend.apiUrl` (`http://<host>:8200/api`) and
+  text-preview, photos/:id). The photos tab is the last category of the home page and shown only while
+  `/api/data-version` says `photosTab`; `src/app/photos/` holds the service and the viewer (Swiper zoom module). Ionic in `md` mode. Services use `environment.backend.apiUrl` (`http://<host>:8200/api`) and
   `playerUrl` (`:5005` on the box, `/api/player` elsewhere); `PlayerRequestInterceptor` adds `X-Requested-With`.
-- Theming: `index.html` loads `active_theme.css`, on the box a symlink to `~/MuPiBox/themes/<theme>.css` set by
-  `scripts/mupibox/setting_update.sh`. Themes share the "km" base styles in `src/theme/km*.scss`. A new theme needs
+- Theming: `index.html` loads `active_theme.css` (its link stays below `<base href>`, else a nested route such as
+  `/photos/<id>` asks for `/photos/active_theme.css` after a reload), on the box a symlink to
+  `~/MuPiBox/themes/<theme>.css` set by `scripts/mupibox/setting_update.sh`. Themes share the "km" base styles in `src/theme/km*.scss`. A new theme needs
   `themes/<id>.css`, a preview PNG from `tools/theme-preview`, an entry in `installedThemes` of
   `config/templates/mupiboxconfig.json` and in the `themes` list of `mupi-app/schema.json`.
 - Display overlay texts and their translations: `src/assets/i18n/display-texts.json`.
