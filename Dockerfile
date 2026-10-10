@@ -29,8 +29,13 @@ RUN apt-get update && \
     unzip \
     socat \
     python3-pil \
+    python3-pip \
     libheif-examples \
     && rm -rf /var/lib/apt/lists/*
+
+# iPhone HEIC pictures of the Fotos tab: pillow-heif with its own current libheif (Debian 12's refuses newer iPhone
+# files), as the installer puts it on a 64-bit box
+RUN pip install pillow-heif --break-system-packages
 
 # The user the box runs everything as.
 RUN groupadd -r dietpi && useradd -r -g dietpi -d /home/dietpi -m dietpi

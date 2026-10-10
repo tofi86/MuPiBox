@@ -24,7 +24,7 @@ import {
   photosOf,
   subfoldersOf,
 } from './albums'
-import { type PhotoImageDeps, type PhotoSize, photoImage, type ThumbnailFn, warmPhotos } from './images'
+import { limitFetches, type PhotoImageDeps, type PhotoSize, photoImage, type ThumbnailFn, warmPhotos } from './images'
 import { type PhotoSource, PhotoSourceOffline } from './source'
 
 export interface PhotoDeps {
@@ -68,7 +68,11 @@ function offline(res: Response, body?: object): void {
 }
 
 export function registerPhotoRoutes(app: Express, deps: PhotoDeps): PhotoRoutes {
-  const imageDeps: PhotoImageDeps = { source: deps.source, thumbnail: deps.thumbnail, uiScale: deps.uiScale }
+  const imageDeps: PhotoImageDeps = {
+    source: limitFetches(deps.source),
+    thumbnail: deps.thumbnail,
+    uiScale: deps.uiScale,
+  }
   const memoFile = path.join(deps.cacheDir, 'photo-albums.json')
   let memo: AlbumMemo | undefined
   let inflight: Promise<PhotoAlbum[]> | undefined

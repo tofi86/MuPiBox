@@ -103,7 +103,8 @@ Kept, with what uses them:
 | `python3-paho-mqtt`, `python3-netifaces` | `scripts/mqtt/mqtt.py` (Home Assistant) |
 | `python3-flask` | MuPiHAT status page (`mupihat.py`) |
 | `python3-pil` | cover thumbnails of the API server (falls back to the original pictures without it) and the pictures of the Fotos tab |
-| `libheif-examples` | `heif-convert`: iPhone HEIC pictures of the Fotos tab are turned into JPEG before PIL sizes them (without it they stay empty); dev list of the updater first, see start_mupibox_update.sh |
+| `libheif-examples` | `heif-convert`: the fallback for iPhone HEIC pictures of the Fotos tab on 32-bit boxes (Debian 12's libheif 1.15 refuses newer iPhone files, Debian 13's reads them); dev list of the updater first, see start_mupibox_update.sh |
+| pip `pillow-heif` (64-bit only) | PIL opens iPhone HEIC pictures itself with the current libheif inside the wheel; pulls a newer Pillow into /usr/local next to python3-pil, which the thumbnail script works with as well |
 | `pip`, `python3-dev` | autosetup installs `telepot`, `requests`, `pyserial` with pip; `telepot` is used by the Telegram scripts |
 | `libgles2-mesa`, `preload` | GPU/graphics stack for the kiosk browser and application preloading; no explicit call, kept as system tuning |
 

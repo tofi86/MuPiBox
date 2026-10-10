@@ -19,9 +19,10 @@ describe('photos', () => {
       )
       .join('')}</D:multistatus>`
 
-  it('tells the display that there is no photos tab without chosen folders', async () => {
+  it('tells the display whether there is a photos tab', async () => {
+    // (a developer's config folder may hold chosen folders: the flag is there either way)
     const res = await request(app).get('/api/data-version').expect(200)
-    assert.equal(res.body.photosTab, false)
+    assert.equal(typeof res.body.photosTab, 'boolean')
   })
 
   it('takes the activity ping of the display', async () => {

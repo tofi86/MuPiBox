@@ -7791,6 +7791,13 @@ const thumbJobs = new Map<string, Promise<string | undefined>>()
 const thumbScript = `
 import sys
 from PIL import Image, ImageOps
+# iPhone HEIC: pillow-heif (pip) brings a current libheif of its own - Debian 12's libheif 1.15 refuses newer iPhone
+# files ("Too many auxiliary image references"); it also turns the picture the way the phone meant it
+try:
+    from pillow_heif import register_heif_opener
+    register_heif_opener()
+except Exception:
+    pass
 src, dst, size = sys.argv[1], sys.argv[2], int(sys.argv[3])
 im = Image.open(src)
 try:
@@ -7814,10 +7821,34 @@ im.thumbnail((size, size), Image.LANCZOS)
 im.save(dst, 'JPEG', quality=82, optimize=True)
 `
 
+// Whether python3 opens HEIC itself: pillow-heif (pip, with a current libheif inside; the installer and the update put
+// it on 64-bit boxes). Asked once; asked again after 10 minutes when it was not there.
+let pilHeifState: { ok: boolean; at: number } | undefined
+async function pilReadsHeif(): Promise<boolean> {
+  if (pilHeifState && (pilHeifState.ok || Date.now() - pilHeifState.at < 10 * 60 * 1000)) return pilHeifState.ok
+  let ok = false
+  try {
+    await execFileAsync('python3', ['-c', 'import pillow_heif'], { timeout: 20000 })
+    ok = true
+  } catch {
+    ok = false
+  }
+  pilHeifState = { ok, at: Date.now() }
+  if (!ok) {
+    console.warn(
+      `${new Date().toLocaleString()}: [MuPiBox-Server] pillow-heif is not installed: HEIC pictures go through heif-convert, whose libheif on Debian 12 refuses newer iPhone files (pip install pillow-heif --break-system-packages)`,
+    )
+  }
+  return ok
+}
+
 // HEIC/HEIF (iPhone) to JPEG with heif-convert (apt package libheif-examples, on every Pi; libheif turns the picture
-// the way the phone meant it). null when the tool is missing or fails: the box then shows no picture for the file.
-// A Pi Zero needs 5-10 s for a 12 MP picture, a Pi 3 or 4 one or two; made once and kept (see getThumbnail).
+// the way the phone meant it) - the way without pillow-heif (32-bit boxes). null when the tool is missing or fails:
+// the box then shows no picture for the file. Debian 12's libheif 1.15 fails on newer iPhone files ("Too many
+// auxiliary image references"), newer ones (Debian 13) read them. A Pi Zero needs 5-10 s for a 12 MP picture, a
+// Pi 3 or 4 one or two; made once and kept (see getThumbnail).
 let heifUnavailableUntil = 0
+let heifFailureLoggedAt = 0
 async function heifToJpeg(source: string): Promise<string | null> {
   if (Date.now() < heifUnavailableUntil) return null
   const target = `${source}.jpg`
@@ -7833,6 +7864,11 @@ async function heifToJpeg(source: string): Promise<string | null> {
     if (/ENOENT/.test(String(error))) {
       heifUnavailableUntil = Date.now() + 10 * 60 * 1000
       console.warn(`${new Date().toLocaleString()}: [MuPiBox-Server] heif-convert is not installed (apt libheif-examples): HEIC pictures stay empty`)
+    } else if (Date.now() - heifFailureLoggedAt > 60 * 1000) {
+      // (said once a minute, not once per picture of an album)
+      heifFailureLoggedAt = Date.now()
+      const why = String((error as { stderr?: string }).stderr || error).trim().slice(0, 200)
+      console.warn(`${new Date().toLocaleString()}: [MuPiBox-Server] heif-convert failed for ${path.basename(source)}: ${why}`)
     }
     await rm(target, { force: true })
     return null
@@ -7894,8 +7930,8 @@ function getThumbnail(
         source = fetched
       }
       await withThumbSlot(async () => {
-        // iPhone HEIC (the Fotos tab): PIL cannot open it - heif-convert writes a JPEG first
-        const converted = /\.(heic|heif)$/i.test(source) ? await heifToJpeg(source) : undefined
+        // iPhone HEIC (the Fotos tab): PIL opens it with pillow-heif; without that, heif-convert writes a JPEG first
+        const converted = /\.(heic|heif)$/i.test(source) && !(await pilReadsHeif()) ? await heifToJpeg(source) : undefined
         if (converted === null) throw new Error('heif-convert failed')
         try {
           await execFileAsync('nice', ['-n', '10', 'python3', '-c', thumbScript, converted ?? source, temp, String(size)], { timeout: 30000 })

@@ -22,6 +22,29 @@ export interface PhotoImageDeps {
   uiScale: () => number
 }
 
+/**
+ * The source with its downloads two at a time, in the order they were asked for: the display asks for the picture on
+ * the screen first and for the ones after it later, and over a slow line (photos in a cloud) eight downloads at once
+ * made the first one wait for all of them. Listings are not held back.
+ */
+export function limitFetches(source: PhotoSource, limit = 2): PhotoSource {
+  let running = 0
+  const waiting: (() => void)[] = []
+  return {
+    list: (folder) => source.list(folder),
+    async fetchToTemp(filePath) {
+      if (running >= limit) await new Promise<void>((resolve) => waiting.push(resolve))
+      running++
+      try {
+        return await source.fetchToTemp(filePath)
+      } finally {
+        running--
+        waiting.shift()?.()
+      }
+    },
+  }
+}
+
 export function photoSizePx(size: PhotoSize, scale: number): number {
   return size === 'thumb' ? Math.round(PHOTO_SIZES.thumb * Math.max(1, scale)) : PHOTO_SIZES.screen
 }
@@ -30,8 +53,28 @@ export function isHeif(filePath: string): boolean {
   return /\.(heic|heif)$/i.test(filePath)
 }
 
+// a picture that took longer than this is noted in the log (the download from a cloud, the decode on a small Pi)
+const SLOW_PHOTO_MS = 8000
+
 /** The picture in that size (made now if needed), undefined when it cannot be read or converted. */
 export async function photoImage(
+  deps: PhotoImageDeps,
+  filePath: string,
+  size: PhotoSize,
+  version?: string,
+): Promise<string | undefined> {
+  const started = Date.now()
+  const result = await photoImageNow(deps, filePath, size, version)
+  const took = Date.now() - started
+  if (took > SLOW_PHOTO_MS) {
+    console.log(
+      `${new Date().toLocaleString()}: [MuPiBox-Server] photo ${filePath} (${size}) took ${Math.round(took / 1000)} s${result ? '' : ' and failed'}`,
+    )
+  }
+  return result
+}
+
+async function photoImageNow(
   deps: PhotoImageDeps,
   filePath: string,
   size: PhotoSize,
@@ -42,7 +85,7 @@ export async function photoImage(
   const fetchSource = () => deps.source.fetchToTemp(filePath)
   const px = photoSizePx(size, deps.uiScale())
   if (!isHeif(filePath)) return deps.thumbnail(`photo:${filePath}`, px, seed, fetchSource)
-  // HEIC: the decode is the expensive part (heif-convert, see getThumbnail) - the screen picture is made first and
+  // HEIC: the decode is the expensive part (pillow-heif or heif-convert, see getThumbnail) - the screen picture is made first and
   // the small one from that JPEG, so a picture is decoded once
   const screen = await deps.thumbnail(`photo:${filePath}`, PHOTO_SIZES.screen, seed, fetchSource)
   if (!screen || size === 'screen') return screen

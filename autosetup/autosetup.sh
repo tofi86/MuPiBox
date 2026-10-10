@@ -158,6 +158,19 @@ rm -Rf /home/dietpi/mupibox.zip /home/dietpi/MuPiBox-* >&3 2>&3
 		after=$(date +%s)
 		echo -e "## pip install telepot ## finished after $((after - before)) seconds" >&3 2>&3
 		STEP=$((STEP + 1))
+
+		# Fotos: iPhone HEIC pictures - pillow-heif brings a current libheif of its own (Debian 12's 1.15 refuses newer
+		# iPhone files); its wheel exists for 64-bit only, a 32-bit box keeps heif-convert
+		if [ "$(uname -m)" = "aarch64" ]; then
+			echo -e "XXX\n${STEP}\nInstall package pip pillow-heif\nXXX"
+			before=$(date +%s)
+			installed=$(pip list 2>/dev/null | grep -i "pillow[-_]heif")
+			if [ ${#installed} = 0 ]; then
+				pip install pillow-heif --break-system-packages >&3 2>&3
+			fi
+			after=$(date +%s)
+			echo -e "## pip install pillow-heif ## finished after $((after - before)) seconds" >&3 2>&3
+		fi
 	fi
 
 	###############################################################################################

@@ -179,8 +179,9 @@ Verified on macOS with Node 22:
 - `/api/photos/*` (albums, one album, a picture in `thumb`/`screen` size) are login-free like `/api/nas/stream`
   but only inside the folders of `photos.folders` (`photoPathAllowed`); `POST /api/activity` (`localOnly`) touches
   `/tmp/mupibox_activity`, which `scripts/mupibox/idle_shutdown.sh` counts as "not idle" for two minutes (the viewer
-  posts once a minute). Thumbnails (`getThumbnail`) apply EXIF orientation and convert HEIC with `heif-convert`
-  (apt `libheif-examples`); `POST /api/nas/login` accepts the developer machine's own addresses under
+  posts once a minute). Thumbnails (`getThumbnail`) apply EXIF orientation and open HEIC through `pillow-heif` (pip, 64-bit boxes; its
+  own current libheif) or else `heif-convert` (apt `libheif-examples`, whose libheif 1.15 on Debian 12 refuses newer
+  iPhone files); `POST /api/nas/login` accepts the developer machine's own addresses under
   `NODE_ENV=development` only.
 - Config paths: `configBasePath` is `./server/config` in production (that is
   `/home/dietpi/.mupibox/Sonos-Kids-Controller-master/server/config/`) and `./config` in dev and test. It holds
