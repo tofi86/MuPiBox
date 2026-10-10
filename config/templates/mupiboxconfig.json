@@ -273,6 +273,9 @@
 		"rememberMe": false,
 		"artistFolders": []
 	},
+	"photos": {
+		"folders": []
+	},
 	"timeout": {
 		"idlePiShutdown": "0",
 		"idleDisplayOff": "10",

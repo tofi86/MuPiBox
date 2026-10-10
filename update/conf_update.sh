@@ -340,6 +340,8 @@ update_config '.mupibox.bootscreen = (.mupibox.bootscreen // "")'
 update_config '.mupibox.maintenanceScreen = (.mupibox.maintenanceScreen // "same")'
 update_config '.mupibox.boxName = (.mupibox.boxName // "")'
 update_config '.mupibox.bootscreenLanguage = (.mupibox.bootscreenLanguage // "en")'
+# Fotos (5.0.9): the NAS folders whose subfolders the display shows as photo albums
+update_config '.photos = (.photos // {folders: []})'
 
 CUSTOMTHEME=$(/usr/bin/jq -r '.mupibox.customTheme' ${CONFIG})
 if [ "$CUSTOMTHEME" == "null" ]; then

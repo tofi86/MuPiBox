@@ -36,12 +36,25 @@ export interface NasConfig {
   [key: string]: unknown
 }
 
+/** A folder of the NAS the parents chose for the Fotos tab: its subfolders are the albums (see ../photos/albums.ts). */
+export interface PhotoFolder {
+  path: string
+  /** the name on the display for the pictures lying directly in it (the folder's name when empty) */
+  name?: string
+}
+
+export interface PhotosConfig {
+  folders?: PhotoFolder[]
+  [key: string]: unknown
+}
+
 export interface MupiboxConfig {
   spotify?: {
     disableScraperForPlaylists?: boolean
     [key: string]: unknown
   }
   nas?: NasConfig
+  photos?: PhotosConfig
   // Old name of "nas" (config files written before the rename). Read as a fallback, never written.
   synology?: NasConfig
   playtimeLimit?: PlaytimeLimitConfig

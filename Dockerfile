@@ -28,6 +28,8 @@ RUN apt-get update && \
     git \
     unzip \
     socat \
+    python3-pil \
+    libheif-examples \
     && rm -rf /var/lib/apt/lists/*
 
 # The user the box runs everything as.

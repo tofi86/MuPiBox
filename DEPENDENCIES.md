@@ -102,7 +102,8 @@ Kept, with what uses them:
 | `python3-requests` | many scripts (Telegram, network check, MQTT) |
 | `python3-paho-mqtt`, `python3-netifaces` | `scripts/mqtt/mqtt.py` (Home Assistant) |
 | `python3-flask` | MuPiHAT status page (`mupihat.py`) |
-| `python3-pil` | cover thumbnails of the API server (falls back to the original pictures without it) |
+| `python3-pil` | cover thumbnails of the API server (falls back to the original pictures without it) and the pictures of the Fotos tab |
+| `libheif-examples` | `heif-convert`: iPhone HEIC pictures of the Fotos tab are turned into JPEG before PIL sizes them (without it they stay empty); dev list of the updater first, see start_mupibox_update.sh |
 | `pip`, `python3-dev` | autosetup installs `telepot`, `requests`, `pyserial` with pip; `telepot` is used by the Telegram scripts |
 | `libgles2-mesa`, `preload` | GPU/graphics stack for the kiosk browser and application preloading; no explicit call, kept as system tuning |
 

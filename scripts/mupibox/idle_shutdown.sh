@@ -6,6 +6,10 @@ CONFIG="/etc/mupibox/mupiboxconfig.json"
 LOG="/tmp/idle_shutdown.log"
 current_idle_time=0
 PLAYERSTATE="/tmp/playerstate"
+# The display says when someone uses it without playing (the photo viewer: POST /api/activity of the API server
+# touches this file once a minute): a touch younger than two minutes counts as not idle, like playback.
+ACTIVITY="/tmp/mupibox_activity"
+ACTIVITY_MAX_AGE=120
 # The log got one or two lines every 10 s ("CURRENT IDLE TIME = 0" over and over); now only when the idle minutes
 # change (and at start and shutdown).
 last_logged=""
@@ -14,6 +18,16 @@ log_idle() {
     echo "$(date +'%d/%m/%Y %H:%M:%S')  # CURRENT IDLE TIME = $1" >> ${LOG}
     last_logged="$1"
   fi
+}
+
+# Playing, or the display in use (see ACTIVITY above)
+box_busy() {
+  [[ $(head -n1 ${PLAYERSTATE}) == "play" ]] && return 0
+  if [ -f "${ACTIVITY}" ]; then
+    local age=$(( $(date +%s) - $(stat -c %Y "${ACTIVITY}" 2>/dev/null || echo 0) ))
+    (( age < ACTIVITY_MAX_AGE )) && return 0
+  fi
+  return 1
 }
 
 touch ${PLAYERSTATE}
@@ -27,7 +41,7 @@ do
   max_idle_time=$(/usr/bin/jq -r .timeout.idlePiShutdown ${CONFIG})
   if (( $max_idle_time > 0 ))
   then
-    if [[ $(head -n1 ${PLAYERSTATE}) != "play" ]]
+    if ! box_busy
     then
 		((current_idle_time++))
 		idle=$(( current_idle_time / 6 ))

@@ -59,6 +59,9 @@ import { episodeKey, MAX_KEEP, type OfflineEpisode, PodcastOffline } from './pod
 import { setFeedHeadReader } from './podcast-search'
 import { EpisodeState, episodeStateSettings } from './episode-state'
 import { uiScale } from './ui-scale'
+import { photoRootsOf } from './photos/albums'
+import { registerPhotoRoutes } from './photos/routes'
+import { type PhotoSource, PhotoSourceOffline } from './photos/source'
 import { browserGuard, corsOptionsFor, isAllowedHost, isLoopback, localOnly, localOrElternSession, PROXY_PORT, setConfiguredHosts, viaProxy } from './request-guard'
 
 // Force IPv4 for DNS lookups to avoid EAI_AGAIN errors on Raspberry Pi
@@ -1629,10 +1632,24 @@ app.get('/api/data-version', (_req, res) => {
   // only when something actually changed — no full-list polling.
   try {
     const st = fs.statSync(activedataFile)
-    res.json({ version: `${Math.floor(st.mtimeMs)}-${st.size}`, local: String(localLibraryVersion), nasTab: nasTabWanted(nasSettings(getMupiboxConfigSync())) })
+    res.json({ version: `${Math.floor(st.mtimeMs)}-${st.size}`, local: String(localLibraryVersion), nasTab: nasTabWanted(nasSettings(getMupiboxConfigSync())), photosTab: photoRootsOf(getMupiboxConfigSync()).length > 0 })
   } catch {
-    res.json({ version: '0', local: String(localLibraryVersion), nasTab: nasTabWanted(nasSettings(getMupiboxConfigSync())) })
+    res.json({ version: '0', local: String(localLibraryVersion), nasTab: nasTabWanted(nasSettings(getMupiboxConfigSync())), photosTab: photoRootsOf(getMupiboxConfigSync()).length > 0 })
   }
+})
+
+// The display says that someone uses it without playing (the photo viewer, once a minute): idle_shutdown.sh counts a
+// touch of this file younger than two minutes as not idle, like playback. Only the box itself - a phone looking at
+// the display must not keep the box awake.
+const activityFile = '/tmp/mupibox_activity'
+let activityTouchedAt = 0
+app.post('/api/activity', localOnly, (_req, res) => {
+  const now = Date.now()
+  if (now - activityTouchedAt > 20000) {
+    activityTouchedAt = now
+    writeFile(activityFile, String(Math.floor(now / 1000))).catch(() => undefined)
+  }
+  res.status(204).end()
 })
 
 app.get('/api/resume', (_req, res) => {
@@ -5116,6 +5133,8 @@ interface NasFileEntry {
   additional?: { size?: number }
   // ETag or last-modified date from the NAS: changes when the file changes (thumbnail cache key)
   version?: string
+  // the last-modified date on its own (version is the ETag where there is one): the Fotos tab orders its albums by it
+  modified?: string
 }
 
 // Not shown and not played: hidden files (macOS "._01.mp3" companions, ".DS_Store"), DSM's "@eaDir" thumbnail
@@ -5163,14 +5182,15 @@ function parsePropfind(xml: string, session: NasSession, folderPath: string): Na
     }
     const isdir = /<(?:\w+:)?collection\s*\/?>/i.test(block)
     const sizeMatch = block.match(/<(?:\w+:)?getcontentlength[^>]*>(\d+)</i)
-    const versionMatch =
-      block.match(/<(?:\w+:)?getetag[^>]*>([^<]+)</i) ?? block.match(/<(?:\w+:)?getlastmodified[^>]*>([^<]+)</i)
+    const modifiedMatch = block.match(/<(?:\w+:)?getlastmodified[^>]*>([^<]+)</i)
+    const versionMatch = block.match(/<(?:\w+:)?getetag[^>]*>([^<]+)</i) ?? modifiedMatch
     entries.push({
       name,
       path: hrefPath,
       isdir,
       additional: sizeMatch ? { size: Number(sizeMatch[1]) } : undefined,
       version: versionMatch ? decodeXml(versionMatch[1].trim()) : undefined,
+      modified: modifiedMatch ? decodeXml(modifiedMatch[1].trim()) : undefined,
     })
   }
   return entries
@@ -5345,6 +5365,36 @@ function nasListFilesLiveCached(folderPath: string): Promise<NasFileEntry[] | un
     nasListCache.delete(nasListCache.keys().next().value as string)
   }
   return entry.files
+}
+
+// Fotos (photos/): the NAS as the source of the pictures - the listing kept a minute and the download, in the two
+// calls the photo routes know. Another source (an SMB share one day) is another object of this shape.
+const webdavPhotoSource: PhotoSource = {
+  async list(folder) {
+    try {
+      const files = await nasListFilesLiveCached(folder)
+      if (files === undefined) throw new PhotoSourceOffline(Date.now() < nasOfflineUntil ? 'unreachable' : 'no_session')
+      return files
+    } catch (error) {
+      if (error instanceof PhotoSourceOffline) throw error
+      // the NAS answered (folder gone, no permission): no pictures there
+      if (error instanceof NasApiError) return []
+      if (error instanceof NasSessionExpiredError) throw new PhotoSourceOffline('no_session')
+      nasMarkOffline()
+      throw new PhotoSourceOffline('unreachable')
+    }
+  },
+  async fetchToTemp(filePath) {
+    const session = await getActiveNasSession()
+    if (!session) throw new PhotoSourceOffline(Date.now() < nasOfflineUntil ? 'unreachable' : 'no_session')
+    try {
+      // (a 12 MB picture over WiFi takes its time)
+      return await nasFetchToTemp(filePath, session, 60000)
+    } catch {
+      nasMarkOffline()
+      throw new PhotoSourceOffline('unreachable')
+    }
+  },
 }
 
 // Lists a NAS folder: live from the NAS, and from whatever is stored locally if the NAS is unreachable.
@@ -6029,14 +6079,16 @@ app.post('/api/nas/login', localOrElternSession, async (req, res) => {
   }
 
   const base = nasResolveBase(address, Boolean(useHttps))
-  // (the box itself is no NAS: its own services got the requests with the NAS's login otherwise)
+  // (the box itself is no NAS: its own services got the requests with the NAS's login otherwise. Not under
+  // npm run serve:backend-api, where the NAS is a container on the developer's machine (docker/webdav/); pm2 on a box
+  // starts server.js without NODE_ENV, so the check stays there)
   let nasHost = ''
   try {
     nasHost = new URL(base).hostname.replace(/^\[|\]$/g, '')
   } catch {
     nasHost = ''
   }
-  if (!nasHost || neverFetched(nasHost)) {
+  if (!nasHost || (neverFetched(nasHost) && !devServe)) {
     res.status(400).json({ success: false, error: 'address is not a NAS address.' })
     return
   }
@@ -7101,17 +7153,23 @@ async function nasCoverThumbnail(
   return await getThumbnail(`nas:${filePath}`, size, seed, async () => {
     const active = session ?? (await getActiveNasSession()) ?? nasLastSession
     if (!active) return undefined
-    const full = await nasFetch(active, nasUrl(active, filePath), {
-      headers: { Authorization: active.auth },
-      signal: AbortSignal.timeout(20000),
-    })
-    if (!full.ok) {
-      return undefined
-    }
-    const tmp = path.join('/tmp', `.nasthumb-${crypto.randomBytes(6).toString('hex')}${path.extname(filePath)}`)
-    await writeFile(tmp, Buffer.from(await full.arrayBuffer()))
-    return tmp
+    return nasFetchToTemp(filePath, active)
   })
+}
+
+// A file of the NAS as a temporary file (the caller deletes it) that keeps the file's extension - getThumbnail
+// converts a HEIC by it. undefined when the NAS does not hand it out; a connection failure throws.
+async function nasFetchToTemp(filePath: string, session: NasSession, timeoutMs = 20000): Promise<string | undefined> {
+  const full = await nasFetch(session, nasUrl(session, filePath), {
+    headers: { Authorization: session.auth },
+    signal: AbortSignal.timeout(timeoutMs),
+  })
+  if (!full.ok) {
+    return undefined
+  }
+  const tmp = path.join('/tmp', `.nasthumb-${crypto.randomBytes(6).toString('hex')}${path.extname(filePath)}`)
+  await writeFile(tmp, Buffer.from(await full.arrayBuffer()))
+  return tmp
 }
 
 // --- Download local ("Download selected") ---------------------------------
@@ -7732,11 +7790,17 @@ const thumbJobs = new Map<string, Promise<string | undefined>>()
 
 const thumbScript = `
 import sys
-from PIL import Image
+from PIL import Image, ImageOps
 src, dst, size = sys.argv[1], sys.argv[2], int(sys.argv[3])
 im = Image.open(src)
 try:
     im.draft('RGB', (size * 2, size * 2))
+except Exception:
+    pass
+# a phone keeps the pixels as the sensor saw them and says in the EXIF how to turn them (the pictures of the Fotos
+# tab, a cover photographed with a phone too): turned here, else they lie on their side
+try:
+    im = ImageOps.exif_transpose(im)
 except Exception:
     pass
 if im.mode in ('RGBA', 'LA', 'P'):
@@ -7749,6 +7813,31 @@ else:
 im.thumbnail((size, size), Image.LANCZOS)
 im.save(dst, 'JPEG', quality=82, optimize=True)
 `
+
+// HEIC/HEIF (iPhone) to JPEG with heif-convert (apt package libheif-examples, on every Pi; libheif turns the picture
+// the way the phone meant it). null when the tool is missing or fails: the box then shows no picture for the file.
+// A Pi Zero needs 5-10 s for a 12 MP picture, a Pi 3 or 4 one or two; made once and kept (see getThumbnail).
+let heifUnavailableUntil = 0
+async function heifToJpeg(source: string): Promise<string | null> {
+  if (Date.now() < heifUnavailableUntil) return null
+  const target = `${source}.jpg`
+  try {
+    await execFileAsync('nice', ['-n', '10', 'heif-convert', '-q', '92', source, target], { timeout: 90000 })
+    // (a file with several pictures inside: heif-convert names them target-1.jpg, target-2.jpg ...)
+    if (!fs.existsSync(target)) {
+      const first = `${target.slice(0, -4)}-1.jpg`
+      if (fs.existsSync(first)) await rename(first, target)
+    }
+    return fs.existsSync(target) ? target : null
+  } catch (error) {
+    if (/ENOENT/.test(String(error))) {
+      heifUnavailableUntil = Date.now() + 10 * 60 * 1000
+      console.warn(`${new Date().toLocaleString()}: [MuPiBox-Server] heif-convert is not installed (apt libheif-examples): HEIC pictures stay empty`)
+    }
+    await rm(target, { force: true })
+    return null
+  }
+}
 
 async function withThumbSlot<T>(work: () => Promise<T>): Promise<T> {
   if (thumbRunning >= thumbMaxParallel) {
@@ -7804,9 +7893,16 @@ function getThumbnail(
         }
         source = fetched
       }
-      await withThumbSlot(() =>
-        execFileAsync('nice', ['-n', '10', 'python3', '-c', thumbScript, source, temp, String(size)], { timeout: 30000 }),
-      )
+      await withThumbSlot(async () => {
+        // iPhone HEIC (the Fotos tab): PIL cannot open it - heif-convert writes a JPEG first
+        const converted = /\.(heic|heif)$/i.test(source) ? await heifToJpeg(source) : undefined
+        if (converted === null) throw new Error('heif-convert failed')
+        try {
+          await execFileAsync('nice', ['-n', '10', 'python3', '-c', thumbScript, converted ?? source, temp, String(size)], { timeout: 30000 })
+        } finally {
+          if (converted) await rm(converted, { force: true })
+        }
+      })
       await rename(temp, target)
       return target
     } catch (error) {
@@ -7965,12 +8061,13 @@ app.get('/api/track-cover', async (req, res) => {
   await sendThumbnail(res, thumb)
 })
 
-function sendThumbnail(res: express.Response, thumb: string): Promise<void> {
+function sendThumbnail(res: express.Response, thumb: string, cache: 'no-cache' | 'immutable' = 'no-cache'): Promise<void> {
   return stat(thumb).then((info) => {
     // Revalidated on every use (a cheap 304 on the box itself) instead of cached blindly for a day, so a
-    // reloaded cover (thumbnail made again, newer time) is shown at once.
+    // reloaded cover (thumbnail made again, newer time) is shown at once. (The pictures of the Fotos tab carry the
+    // file's version in their address: those the browser keeps for a year.)
     res.setHeader('Content-Type', 'image/jpeg')
-    res.setHeader('Cache-Control', 'no-cache')
+    res.setHeader('Cache-Control', cache === 'immutable' ? 'public, max-age=31536000, immutable' : 'no-cache')
     res.setHeader('Last-Modified', info.mtime.toUTCString())
     const since = Date.parse(String(res.req?.headers?.['if-modified-since'] ?? ''))
     if (Number.isFinite(since) && Math.floor(info.mtimeMs / 1000) * 1000 <= since) {
@@ -8316,6 +8413,16 @@ const spotifySyncDeps: RunSyncDeps = {
 }
 app.use('/api/spotify-sync', createSpotifySyncRouter(spotifySyncDeps))
 
+// Fotos: the photo viewer's routes for the display (photos/routes.ts), with the NAS as the source of the pictures
+const photoRoutes = registerPhotoRoutes(app, {
+  source: webdavPhotoSource,
+  roots: () => photoRootsOf(getMupiboxConfigSync()),
+  thumbnail: getThumbnail,
+  sendThumbnail,
+  uiScale: () => uiScale(getMupiboxConfigSync()),
+  cacheDir: path.join(process.cwd(), 'cache'),
+})
+
 // Phase 14c — the routes of the app (JSON API under /api/app/*; /api/eltern/* the address of before, for links and
 // scripts still using it). The magic-link landing handler at /app redeems
 // ?token=... into a session cookie and redirects to /app (without the query) so the app loads cleanly.
@@ -8333,6 +8440,17 @@ app.use(
     nasCover: writeNasCover,
     nasSelected: nasPathSelected,
     podcastOffline,
+    photos: {
+      source: webdavPhotoSource,
+      // (the NAS login of the NAS page: the photos page says whether it works right now, as /api/nas/state does)
+      nasState: async () => ({
+        address: nasSettings(getMupiboxConfigSync())?.address ?? '',
+        loggedIn: Boolean(
+          nasSessionCache ?? (await Promise.race([getActiveNasSession(), new Promise<undefined>((r) => setTimeout(() => r(undefined), 8000))])),
+        ),
+      }),
+      albumsChanged: photoRoutes.albumsChanged,
+    },
     localLibrary: {
       root: libraryRoot,
       categories: libraryCategories,

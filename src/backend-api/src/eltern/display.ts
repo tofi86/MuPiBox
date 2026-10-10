@@ -22,7 +22,8 @@ export interface DisplayDeps {
   updateMupiboxConfig: (mutate: (cfg: Record<string, unknown>) => void) => Promise<void>
 }
 
-const CATEGORIES = ['audiobook', 'music', 'nas', 'other']
+// (photos: the Fotos tab, there once a photo folder is chosen - see ../photos/)
+const CATEGORIES = ['audiobook', 'music', 'nas', 'other', 'photos']
 const ROTATIONS: Record<string, string[]> = {
   display_hdmi_rotate: ['0', '1', '2', '3', '0x10000', '0x20000'],
   lcd_rotate: ['0', '2'],

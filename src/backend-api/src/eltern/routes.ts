@@ -18,6 +18,7 @@ import * as path from 'node:path'
 import { type Request, type RequestHandler, Router } from 'express'
 import QRCode from 'qrcode'
 import type { MupiboxConfig } from '../models/mupibox-config.model'
+import { type PhotoAppDeps, registerPhotoAppRoutes } from '../photos/routes'
 import {
   CSRF_HEADER,
   SESSION_COOKIE,
@@ -107,6 +108,8 @@ export interface ElternRouterDeps {
   nasSelected?: (folder: string) => Promise<boolean>
   /** The podcast episodes kept on the SD card (see ../podcast-offline.ts). */
   podcastOffline?: PodcastOffline
+  /** The photo viewer's folders (../photos/routes.ts): the source of the pictures, the NAS login's state, the albums' reset. */
+  photos?: Pick<PhotoAppDeps, 'source' | 'nasState' | 'albumsChanged'>
 }
 
 /** Build a Set-Cookie header value. HttpOnly + SameSite=Strict; no Secure
@@ -404,6 +407,8 @@ export function createElternApiRouter(deps: ElternRouterDeps): Router {
   registerCustomBootRoutes(router, { getMupiboxConfig: deps.getMupiboxConfig, updateMupiboxConfig: deps.updateMupiboxConfig })
   registerFeedHostRoutes(router, { getMupiboxConfig: deps.getMupiboxConfig, updateMupiboxConfig: deps.updateMupiboxConfig })
   registerPinnedCardRoutes(router, { getMupiboxConfig: deps.getMupiboxConfig, updateMupiboxConfig: deps.updateMupiboxConfig })
+  // (Fotos: the chosen folders of the photo viewer and a look into a folder before it is chosen)
+  if (deps.photos) registerPhotoAppRoutes(router, { ...deps.photos, getMupiboxConfig: deps.getMupiboxConfig, updateMupiboxConfig: deps.updateMupiboxConfig })
   // (a fixed address per WiFi network, and the watch that takes a wrong one back to DHCP)
   registerWifiStaticRoutes(router, { wifiIface })
   startWifiStaticWatch({ wifiIface })
