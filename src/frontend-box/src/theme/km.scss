@@ -163,8 +163,9 @@ body.km {
     }
   }
 
-  // ---------- resume page: on the theme's background like the album list (the theme files only name the others) ----------
-  .resume-content {
+  // ---------- resume page and photo viewer: on the theme's background like the album list (the theme files only name the others) ----------
+  .resume-content,
+  .photos-content {
     --ion-background-color: transparent !important;
     --background: transparent !important;
   }

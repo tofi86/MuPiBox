@@ -28,6 +28,11 @@ export const routes: Routes = [
     loadComponent: () => import('./player/player.page').then((m) => m.PlayerPage),
   },
   {
+    // the pictures of one photo album (photos tab of the start page), full screen to swipe through
+    path: 'photos/:id',
+    loadComponent: () => import('./photos/photo-viewer.page').then((m) => m.PhotoViewerPage),
+  },
+  {
     path: 'edit',
     loadComponent: () => import('./edit/edit.page').then((m) => m.EditPage),
   },

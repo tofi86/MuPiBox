@@ -32,7 +32,9 @@
         "stopLabel": "Stop",
         "trackOf": "Track {n} of {t}",
         "outputHeadsetNotFound": "Headphones not found. Are they on and close by?",
-        "outputPlaying": "playing"
+        "outputPlaying": "playing",
+        "photosTitle": "Photos",
+        "photosAlbumEmpty": "No photos in this album yet"
       }
     },
     "de": {
@@ -66,7 +68,9 @@
         "stopLabel": "Stopp",
         "trackOf": "Titel {n} von {t}",
         "outputHeadsetNotFound": "Kopfhörer nicht gefunden. Ist er an und in der Nähe?",
-        "outputPlaying": "spielt"
+        "outputPlaying": "spielt",
+        "photosTitle": "Fotos",
+        "photosAlbumEmpty": "Noch keine Fotos in diesem Album"
       }
     },
     "fr": {

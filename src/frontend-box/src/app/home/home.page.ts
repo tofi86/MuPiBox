@@ -16,6 +16,7 @@ import {
 import { addIcons } from 'ionicons'
 import {
   bookOutline,
+  imagesOutline,
   musicalNotesOutline,
   radioOutline,
   serverOutline,
@@ -37,6 +38,7 @@ import { StatusComponent } from '../status/status.component'
 import { BackgroundPlaybackService } from '../background-playback.service'
 import { KmStatusGroupComponent } from '../km-header/km-status-group.component'
 import { NowPlayingPillComponent } from '../now-playing-pill/now-playing-pill.component'
+import { type PhotoAlbum, PhotosService } from '../photos/photos.service'
 import { SwiperComponent, SwiperData } from '../swiper/swiper.component'
 import { SwiperIonicEventsHelper } from '../swiper/swiper-ionic-events-helper'
 import { KmThemeService } from '../theme/km-theme.service'
@@ -81,20 +83,34 @@ export class HomePage extends SwiperIonicEventsHelper {
     .categorySwipe.pipe(takeUntilDestroyed())
     .subscribe((step) => this.switchCategory(step))
 
-  // Category tabs at the top, in display order; some can be hidden in the admin.
+  // Category tabs at the top, in display order; some can be hidden in the admin. The photos tab stays last: the
+  // screenshot tools (tools/manual-shots, tools/theme-preview) address the tabs by index and never show it.
   protected readonly categories: { key: CategoryType; icon: string }[] = [
     { key: 'audiobook', icon: 'book-outline' },
     { key: 'music', icon: 'musical-notes-outline' },
     { key: 'nas', icon: 'server-outline' },
     { key: 'other', icon: 'radio-outline' },
+    { key: 'photos', icon: 'images-outline' },
   ]
   protected hiddenCategories: WritableSignal<string[]> = signal([])
   protected configLoaded: WritableSignal<boolean> = signal(false)
   // (the NAS tab also goes when all shown NAS folders are in a category of their own: nothing is left for it)
   protected nasTabWanted: WritableSignal<boolean> = signal(true)
+  // the photos tab is only there once the parents chose a photo folder (app › Fotos; the poll says so)
+  protected photosTabWanted: WritableSignal<boolean> = signal(false)
   protected visibleCategories = computed(() =>
-    this.categories.filter((c) => !this.hiddenCategories().includes(c.key) && (c.key !== 'nas' || this.nasTabWanted())),
+    this.categories.filter(
+      (c) =>
+        !this.hiddenCategories().includes(c.key) &&
+        (c.key !== 'nas' || this.nasTabWanted()) &&
+        (c.key !== 'photos' || this.photosTabWanted()),
+    ),
   )
+  // five tabs next to "Läuft gerade" would leave the pill no room: they are drawn narrower then (km-round2.scss)
+  protected readonly fiveTabs = computed(() => this.visibleCategories().length >= 5)
+  // The tab to start on, if a page asked for one (the photo viewer's "back" after a cold load: state.category).
+  // It may not be visible yet - the photos tab appears with the first poll answer - so it is kept until it is.
+  private startCategory: CategoryType | undefined
 
   protected artists: Signal<Artist[]>
   // Category of the list currently shown; a reload of the same category keeps the scroll position.
@@ -118,9 +134,13 @@ export class HomePage extends SwiperIonicEventsHelper {
     private http: HttpClient,
     private navController: NavController,
     private coverFlip: CoverFlipService,
+    private photos: PhotosService,
   ) {
     super()
-    addIcons({ timerOutline, bookOutline, musicalNotesOutline, radioOutline, serverOutline })
+    addIcons({ timerOutline, bookOutline, musicalNotesOutline, radioOutline, serverOutline, imagesOutline })
+
+    const wanted = this.router.currentNavigation()?.extras.state?.category
+    if (this.categories.some((c) => c.key === wanted)) this.startCategory = wanted
 
     this.http.get<MupiboxConfig>(`${environment.backend.apiUrl}/config`).subscribe({
       next: (config) => {
@@ -133,11 +153,7 @@ export class HomePage extends SwiperIonicEventsHelper {
         if (Array.isArray(hidden)) {
           this.hiddenCategories.set(hidden)
         }
-        // Do not start on a category that is hidden.
-        const visible = this.visibleCategories()
-        if (visible.length > 0 && !visible.some((c) => c.key === this.category())) {
-          this.category.set(visible[0].key)
-        }
+        this.ensureVisibleCategory()
         this.configLoaded.set(true)
       },
       error: () => {
@@ -147,13 +163,21 @@ export class HomePage extends SwiperIonicEventsHelper {
     })
 
     // the NAS tab comes and goes with the parents' choice (app › NAS); shown on it when it goes: the first tab
-    this.mediaService.getNasTabWanted().pipe(takeUntilDestroyed()).subscribe((wanted) => {
-      this.nasTabWanted.set(wanted)
-      const visible = this.visibleCategories()
-      if (visible.length > 0 && !visible.some((c) => c.key === this.category())) {
-        this.category.set(visible[0].key)
-      }
-    })
+    this.mediaService
+      .getNasTabWanted()
+      .pipe(takeUntilDestroyed())
+      .subscribe((wanted) => {
+        this.nasTabWanted.set(wanted)
+        this.ensureVisibleCategory()
+      })
+    // the photos tab likewise (app › Fotos)
+    this.mediaService
+      .getPhotosTabWanted()
+      .pipe(takeUntilDestroyed())
+      .subscribe((wanted) => {
+        this.photosTabWanted.set(wanted)
+        this.ensureVisibleCategory()
+      })
 
     this.isOnline = toSignal(this.mediaService.isOnline())
     // the other categories are made ready in the background, so switching shows them at once
@@ -184,7 +208,12 @@ export class HomePage extends SwiperIonicEventsHelper {
           if (!background) this.isLoading.set(true)
         }),
         switchMap(({ category, background }) => {
-          return this.mediaService.fetchArtistData(category, background).pipe(
+          // the photos tab: the albums of the parents' photo folders, one tile each (like the artists of the others)
+          const list =
+            category === 'photos'
+              ? this.photos.albums().pipe(map((albums) => albums.map(HomePage.albumAsArtist)))
+              : this.mediaService.fetchArtistData(category, background)
+          return list.pipe(
             catchError((error): Observable<Artist[]> => {
               console.error(error)
               return background ? EMPTY : of([])
@@ -215,13 +244,15 @@ export class HomePage extends SwiperIonicEventsHelper {
     this.unavailable = computed(() => {
       if (this.isLoading()) return false
       if (this.category() === 'nas') return this.mediaService.nasUnavailable()
+      if (this.category() === 'photos') return this.photos.unavailable()
       const artists = this.artists()
       if (this.isOnline() !== false || !artists || artists.length === 0) return false
       return artists.every((a) => a.coverMedia?.type === 'rss' || a.coverMedia?.type === 'radio')
     })
-    // While the NAS is not reachable the list is asked for again every 30 s.
+    // While the NAS is not reachable the list is asked for again every 30 s (the photos live on the NAS too).
     effect((onCleanup) => {
-      if (!(this.category() === 'nas' && this.unavailable())) return
+      const category = this.category()
+      if (!((category === 'nas' || category === 'photos') && this.unavailable())) return
       const timer = window.setInterval(() => this.reloadTick.update((n) => n + 1), 30_000)
       onCleanup(() => window.clearInterval(timer))
     })
@@ -239,6 +270,33 @@ export class HomePage extends SwiperIonicEventsHelper {
     })
   }
 
+  // Not on a tab that is hidden or gone (the parents' choice; the NAS tab without folders of its own): the first one.
+  // A tab that was asked for at the start (startCategory) is taken as soon as it is there.
+  private ensureVisibleCategory(): void {
+    const visible = this.visibleCategories()
+    if (visible.length === 0) return
+    if (this.startCategory !== undefined && visible.some((c) => c.key === this.startCategory)) {
+      this.category.set(this.startCategory)
+      this.startCategory = undefined
+      return
+    }
+    if (!visible.some((c) => c.key === this.category())) {
+      this.category.set(visible[0].key)
+    }
+  }
+
+  // A photo album as an entry of the start page's list, so the tiles, the covers and the "not reachable" card are
+  // the ones of the other tabs (the album list synthesizes artists for NAS folder levels the same way).
+  private static albumAsArtist(album: PhotoAlbum): Artist {
+    const cover = album.cover ?? ''
+    return {
+      name: album.name,
+      albumCount: String(album.count),
+      cover,
+      coverMedia: { type: 'photos', category: 'photos', id: album.id, title: album.name, cover },
+    }
+  }
+
   private switchCategory(step: 1 | -1): void {
     const visible = this.visibleCategories()
     if (visible.length < 2) return
@@ -254,6 +312,11 @@ export class HomePage extends SwiperIonicEventsHelper {
   }
 
   protected async artistCoverClicked(artist: Artist): Promise<void> {
+    if (artist.coverMedia?.type === 'photos') {
+      // a photo album: its pictures full screen, to swipe through
+      void this.navController.navigateForward(['/photos', artist.coverMedia.id])
+      return
+    }
     // Check if this is a standalone playlist (playlist without artist)
     const isPlayableNasFolder = artist.coverMedia?.type === 'nas' && !artist.coverMedia.nasIsContainer
     const isPlayableLibraryFolder =

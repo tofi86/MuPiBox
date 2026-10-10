@@ -56,6 +56,15 @@ import { RssFeedService } from './rssfeed.service'
 import { SpotifyService } from './spotify.service'
 import { type ExtraDataMedia, localizeCoverUrl } from './utils'
 
+// What /api/data-version answers (polled every 20 s): the change tokens of the library and which optional tabs the
+// start page shows. photosTab is undefined when the poll got no answer (the last state is kept then).
+interface DataVersion {
+  version: string
+  local: string
+  nasTab: boolean
+  photosTab?: boolean
+}
+
 // A Spotify album the library already describes (title and cover - the sync and the app store them): its tile is
 // built from the entry. Asking Spotify for every album whenever the list is built (hundreds for one artist
 // subscription, and again when the kept answers got old) ran Spotify apps under its 2026 rules into blocks of many
@@ -382,7 +391,7 @@ export class MediaService {
 
   private libraryVersion$?: Observable<string>
   private dataVersion$?: Observable<string>
-  private versions$?: Observable<{ version: string; local: string; nasTab: boolean }>
+  private versions$?: Observable<DataVersion>
 
   /**
    * Phase 17g: cheap library-change signal. Polls /api/data-version (a stat,
@@ -431,15 +440,36 @@ export class MediaService {
     )
   }
 
-  private versions(): Observable<{ version: string; local: string; nasTab: boolean }> {
+  /** Whether the photos tab is wanted: the parents chose at least one photo folder (app › Fotos). */
+  // A poll without an answer keeps the last state (the tab must not come and go while the box is busy); before the
+  // first answer there is no tab, as with a backend that does not know photos (it never sends photosTab).
+  public getPhotosTabWanted(): Observable<boolean> {
+    return this.versions().pipe(
+      scan<DataVersion, boolean>((last, v) => v.photosTab ?? last, false),
+      distinctUntilChanged(),
+    )
+  }
+
+  private versions(): Observable<DataVersion> {
     if (!this.versions$) {
       this.versions$ = interval(20000).pipe(
         startWith(0),
         switchMap(() =>
-          this.http.get<{ version: string; local?: string; nasTab?: boolean }>(`${this.getApiBackendUrl()}/data-version`).pipe(
-            map((r) => ({ version: r?.version ?? '', local: r?.local ?? '', nasTab: r?.nasTab !== false })),
-            catchError(() => of({ version: '', local: '', nasTab: true })),
-          ),
+          this.http
+            .get<{ version: string; local?: string; nasTab?: boolean; photosTab?: boolean }>(
+              `${this.getApiBackendUrl()}/data-version`,
+            )
+            .pipe(
+              map(
+                (r): DataVersion => ({
+                  version: r?.version ?? '',
+                  local: r?.local ?? '',
+                  nasTab: r?.nasTab !== false,
+                  photosTab: r?.photosTab === true,
+                }),
+              ),
+              catchError(() => of<DataVersion>({ version: '', local: '', nasTab: true, photosTab: undefined })),
+            ),
         ),
         shareReplay({ bufferSize: 1, refCount: true }),
       )

@@ -47,6 +47,9 @@ export const DEFAULT_DISPLAY_TEXTS = {
   outputHeadsetNotFound: 'Headphones not found. Are they on and close by?',
   // the tile of the device that plays now ("Hören mit" window)
   outputPlaying: 'playing',
+  // the photo viewer: its title until the album's name is known, and an album without pictures
+  photosTitle: 'Photos',
+  photosAlbumEmpty: 'No photos in this album yet',
 }
 export type DisplayTextKey = keyof typeof DEFAULT_DISPLAY_TEXTS
 type TextSet = Partial<Record<DisplayTextKey, string>>

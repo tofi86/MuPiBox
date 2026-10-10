@@ -117,6 +117,12 @@ body.cf {
     width: 80px;
   }
 
+  // five tabs (the photos tab is there) next to "Läuft gerade": 64 wide, so the group stays as wide as four at 80
+  // and the pill keeps its room (five at 80 would leave it 174 px, too little for a title)
+  .km-five.km-mini .km-tab {
+    width: 64px;
+  }
+
   // page title in the header (album list, player): next to the round button
   .km-htitle {
     flex: 1;
@@ -132,6 +138,14 @@ body.cf {
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
+    }
+
+    // a second line below the title (the photo viewer's "3 / 12")
+    .km-ht2 {
+      font-size: 15px;
+      font-weight: 600;
+      color: var(--km-on-band-2);
+      white-space: nowrap;
     }
   }
 

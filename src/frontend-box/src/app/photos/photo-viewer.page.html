@@ -1,0 +1,59 @@
+<ion-header class="medialist-header" [class.km-r2]="r2()">
+  @if (r2()) {
+    <!-- km themes and coverflow, design round 2: back, the album's name with "3 / 12" below it, "Läuft gerade",
+         WiFi/battery with the listening time -->
+    <div class="km-bar">
+      <button class="km-hbtn" type="button" data-mupi-back (click)="goBack()">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 12H5M11 6l-6 6 6 6" /></svg>
+      </button>
+      <div class="km-htitle"><span class="km-ht1">{{ title() }}</span><span class="km-ht2">{{ counter() }}</span></div>
+      <mupi-now-playing-pill></mupi-now-playing-pill>
+      <mupi-km-status-group></mupi-km-status-group>
+    </div>
+  } @else {
+  <ion-toolbar color="light">
+    <ion-buttons slot="start">
+      <ion-button (click)="goBack()">
+        <ion-icon slot="icon-only" name="arrow-back-outline"></ion-icon>
+      </ion-button>
+    </ion-buttons>
+    <ion-title>{{ title() }}<span class="pv-counter">{{ counter() }}</span></ion-title>
+    <span slot="end" class="mupihat-icon-container"><mupi-status></mupi-status></span>
+  </ion-toolbar>
+  }
+</ion-header>
+
+<!-- (no scrolling of the content: the swiper takes the whole area, zoom pans inside a slide) -->
+<ion-content class="photos-content" [scrollY]="false">
+  <mupi-loading [loading]="isLoading()"></mupi-loading>
+  @if (unavailable()) {
+    <mupi-media-unavailable [nas]="true"></mupi-media-unavailable>
+  } @else if (list(); as photos) {
+    @if (photos.length === 0) {
+      <div class="pv-empty">{{ displayTexts.text('photosAlbumEmpty') }}</div>
+    } @else {
+      <!-- rendered only once the list is there: Swiper takes its slides at initialization. Far slides have no <img>
+           (not even an empty src - that would ask the box for "/null"), so their decoded pictures are let go of. -->
+      <swiper-container class="pv-swiper" slides-per-view="1" space-between="16" speed="300" threshold="8" resistance="true" resistance-ratio="0.5" zoom="true" zoom-max-ratio="3" (swiperslidechange)="onSlideChange($event)">
+        @for (p of photos; track p.path; let i = $index) {
+          <swiper-slide>
+            <div class="swiper-zoom-container">
+              @if (inWindow(i)) {
+                @if (failed().has(p.path)) {
+                  <div class="pv-broken"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v14H4zM4 15l5-5 4 4 3-3 4 4" /><path d="M3 3l18 18" /></svg></div>
+                } @else {
+                  <img [src]="p.src" [class.pv-ready]="loaded().has(p.path)" draggable="false" alt="" (load)="onLoad(p)" (error)="onError(p)" />
+                  @if (!loaded().has(p.path)) {
+                    <div class="pv-spin"></div>
+                  }
+                }
+              } @else {
+                <div class="pv-ph"></div>
+              }
+            </div>
+          </swiper-slide>
+        }
+      </swiper-container>
+    }
+  }
+</ion-content>

@@ -69,8 +69,18 @@ body.cf {
     width: 64px;
   }
 
+  // five tabs next to "Läuft gerade" (the photos tab): narrower, so the pill keeps its room
+  .km-five.km-mini .km-tab {
+    width: 56px;
+  }
+
   .km-htitle .km-ht1 {
     font-size: 22px;
+  }
+
+  .km-htitle .km-ht2 {
+    font-size: 13px;
+    font-weight: 400;
   }
 
   // "Läuft gerade": a plain line, 52 high, radius 10, square cover 40
