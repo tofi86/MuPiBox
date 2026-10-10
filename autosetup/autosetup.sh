@@ -594,6 +594,13 @@ rm -Rf /home/dietpi/mupibox.zip /home/dietpi/MuPiBox-* >&3 2>&3
 	cp -f ${MUPI_SRC}/scripts/chromium-autostart.sh /var/lib/dietpi/dietpi-software/installed/chromium-autostart.sh >&3 2>&3
 	/boot/dietpi/dietpi-autostart 11 >&3 2>&3
 	chmod +x /var/lib/dietpi/dietpi-software/installed/chromium-autostart.sh >&3 2>&3
+	# Fotos: DietPi starts Chromium in its "low-end device mode" (/etc/chromium.d/dietpi) - 4 bits per colour in its
+	# textures, so photos and covers come out posterised on the display (steps instead of skin tones). A box with
+	# 1 GB or more draws the full colours; the flag is taken out of DietPi's file (news 5.0.9). A Pi with less memory
+	# (Zero 2 W) keeps the mode, it saves memory there.
+	if [ "$(awk '/MemTotal/ {print int($2/1024)}' /proc/meminfo)" -ge 900 ] && grep -q -- '--enable-low-end-device-mode' /etc/chromium.d/dietpi 2>/dev/null; then
+		sed -i 's/ *--enable-low-end-device-mode//g' /etc/chromium.d/dietpi >&3 2>&3
+	fi
 	apt-get install xserver-xorg-legacy -y >&3 2>&3
 	sed -i 's/allowed_users\=console/allowed_users\=anybody/g' /etc/X11/Xwrapper.config >&3 2>&3
 	mv -f ${MUPI_SRC}/config/templates/98-dietpi-disable_dpms.conf /etc/X11/xorg.conf.d/98-dietpi-disable_dpms.conf >&3 2>&3

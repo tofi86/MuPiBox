@@ -645,6 +645,13 @@ rm -f /tmp/mupibox-update-failed
 	chown dietpi:dietpi /home/dietpi/.bashrc >&3 2>&3
 	chmod 755 /usr/local/bin/mupibox/* >&3 2>&3
 	chmod 755 /var/lib/dietpi/dietpi-software/installed/chromium-autostart.sh >&3 2>&3
+	# Fotos: DietPi starts Chromium in its "low-end device mode" (/etc/chromium.d/dietpi) - 4 bits per colour in its
+	# textures, so photos and covers come out posterised on the display (steps instead of skin tones). A box with
+	# 1 GB or more draws the full colours; the flag is taken out of DietPi's file (news 5.0.9). A Pi with less memory
+	# (Zero 2 W) keeps the mode, it saves memory there.
+	if [ "$(awk '/MemTotal/ {print int($2/1024)}' /proc/meminfo)" -ge 900 ] && grep -q -- '--enable-low-end-device-mode' /etc/chromium.d/dietpi 2>/dev/null; then
+		sed -i 's/ *--enable-low-end-device-mode//g' /etc/chromium.d/dietpi >&3 2>&3
+	fi
 	# the WiFi guard in front of Debian's wpa_action (a late "disconnected" took a working WiFi down at the start)
 	/usr/local/bin/mupibox/mupi_wpa_guard.sh install >&3 2>&3 || echo "## WiFi guard not installed - Debian's wpa_action stays as it was ##" >&3 2>&3
 	after=$(date +%s)

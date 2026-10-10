@@ -219,6 +219,9 @@ Verified on macOS with Node 22:
   in `/home/dietpi/MuPiBox/themes/`, admin in `/var/www`, logs in `/var/log/mupibox/`. The kiosk
   (`scripts/chromium-autostart.sh`, `kiosk_start.sh`) opens `http://localhost:8200`.
 - Many backend routes shell out to these scripts with sudo; www-data and dietpi have passwordless sudo.
+- The kiosk's Chromium takes DietPi's flags from `/etc/chromium.d/dietpi` (the `chromium-browser` wrapper sources
+  them). Installer and updater strip `--enable-low-end-device-mode` there on boxes with 1 GB or more: it composites
+  with 4 bits per colour and posterises photos and covers.
 - Services: `config/services/mupi_*.service` (startstop, splash, idle shutdown, wifi, bluetooth, hat, fan, telegram,
   mqtt, vnc, …), overrides for pm2 and DietPi's wifi monitor. See DEPENDENCIES.md for what each needs.
 
